@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
@@ -11,7 +11,7 @@ import logging
 import datetime, traceback
 from pydub import AudioSegment
 
-REQUIRED_DIRS = ["output_audio", "sample_audio", "audioldm/weights"]
+REQUIRED_DIRS = ["output_audio", "sample_audio", "uploads", "audioldm/weights"]
 
 for directory in REQUIRED_DIRS:
     if not os.path.exists(directory):
@@ -51,6 +51,7 @@ app.add_middleware(
 BASE_DIR = Path(__file__).parent
 SAMPLE_DIR = BASE_DIR / "sample_audio"
 OUTPUT_DIR = BASE_DIR / "output_audio"
+UPLOAD_DIR = BASE_DIR / "uploads"
 LOG_FILE = BASE_DIR / "audio_logs.txt"
 
 
@@ -69,9 +70,44 @@ sfx_prompts = [
     "creaking floorboards",
 ]
 
+# Simple tone-based SFX library for video processing
+SFX_LIBRARY = {
+    "fear": ["heavy breathing", "distant scream", "heartbeat"],
+    "aggression": ["footsteps", "metal crash", "shouting"],
+    "isolation": ["echoes", "dripping water", "creaking floor"],
+    "neutral": ["soft wind", "low hum", "light static"],
+}
+
+
+def transcribe_video(filepath: str) -> str:
+    """Extract audio using ffmpeg and transcribe with Whisper."""
+    import whisper
+    import os
+
+    model = whisper.load_model("base")
+    audio_path = filepath.rsplit(".", 1)[0] + ".wav"
+    os.system(
+        f"ffmpeg -y -i {filepath} -ar 16000 -ac 1 {audio_path} >/dev/null 2>&1"
+    )
+    result = model.transcribe(audio_path)
+    return result.get("text", "")
+
+
+def analyze_tone(transcript: str) -> str:
+    """Return a simple tone classification from the transcript."""
+    transcript = transcript.lower()
+    if any(w in transcript for w in ["run", "hide", "scared", "no", "stop"]):
+        return "fear"
+    if any(w in transcript for w in ["angry", "mad", "fight", "kill"]):
+        return "aggression"
+    if any(w in transcript for w in ["alone", "quiet", "lost"]):
+        return "isolation"
+    return "neutral"
+
 # Ensure directories exist
 SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def generate_sfx_clip(prompt: str, duration: int) -> str:
@@ -167,6 +203,49 @@ async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
         "file_url": f"/download/{filename}",
         "status": status,
     })
+
+
+@app.post("/upload-video")
+async def upload_video(file: UploadFile = File(...)):
+    """Save uploaded video to the uploads folder and return its id."""
+    filename = f"{uuid.uuid4()}.mp4"
+    filepath = UPLOAD_DIR / filename
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    return {"video_id": filename}
+
+
+@app.post("/generate-sfx-from-video")
+async def sfx_from_video(video_id: str):
+    """Generate a short SFX track from an uploaded video."""
+    path = UPLOAD_DIR / video_id
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    transcript = transcribe_video(str(path))
+    tone = analyze_tone(transcript)
+    sfx_prompts = random.sample(SFX_LIBRARY[tone], 2)
+
+    clips = [generate_sfx_clip(p, 10) for p in sfx_prompts]
+    combined = AudioSegment.silent(duration=10000)
+    for clip in clips:
+        if clip and os.path.exists(clip):
+            combined = combined.overlay(
+                AudioSegment.from_wav(clip),
+                position=random.randint(0, 5000),
+            )
+            os.remove(clip)
+
+    final_name = f"{uuid.uuid4()}.mp3"
+    final_path = OUTPUT_DIR / final_name
+    combined.export(final_path, format="mp3")
+
+    return {
+        "file_url": f"/download/{final_name}",
+        "transcript": transcript,
+        "tone": tone,
+        "sfx_used": sfx_prompts,
+    }
 
 @app.get("/download/{filename}")
 async def download(filename: str):
