@@ -1,7 +1,9 @@
-fastapi
-uvicorn
-audiocraft
-torchaudio
+fastapi>=0.95.0
+uvicorn[standard]>=0.20.0
+audiocraft @ git+https://github.com/facebookresearch/audiocraft.git
+torchaudio>=0.10.0
 soundfile
+pydub  # requires ffmpeg installed on the system
 python-multipart
-pydub
+uuid
+requests
