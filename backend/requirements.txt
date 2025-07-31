@@ -4,3 +4,4 @@ audiocraft
 torchaudio
 soundfile
 python-multipart
+pydub
