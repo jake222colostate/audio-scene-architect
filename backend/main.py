@@ -8,8 +8,12 @@ import shutil
 from datetime import datetime
 import uuid
 import os
+import logging
+from pydub import AudioSegment
 
 app = FastAPI()
+
+logging.basicConfig(level=logging.INFO)
 
 # Allow all origins/headers during development
 app.add_middleware(
@@ -55,7 +59,13 @@ def generate_audio_from_text(prompt: str, duration: int) -> str:
 
     audio_write(str(filepath.with_suffix("")), wav[0].cpu(), model.sample_rate, strategy="loudness")
 
-    return filename
+    # Convert wav to mp3
+    mp3_filename = filepath.with_suffix(".mp3").name
+    mp3_path = OUTPUT_DIR / mp3_filename
+    AudioSegment.from_wav(filepath).export(mp3_path, format="mp3")
+    os.remove(filepath)
+
+    return mp3_filename
 
 @app.post("/generate-audio")
 async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
@@ -64,33 +74,37 @@ async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
 
     try:
         filename = generate_audio_from_text(prompt, duration)
-    except Exception:
+        status = "success"
+    except Exception as exc:
+        logging.error("Audio generation failed: %s", exc)
         file_id = uuid4().hex
         output_file = OUTPUT_DIR / f"{file_id}.mp3"
-        sample_files = list(SAMPLE_DIR.glob("*.mp3"))
-        if sample_files:
-            chosen = random.choice(sample_files)
-            shutil.copy(chosen, output_file)
+        fallback = SAMPLE_DIR / "fallback.mp3"
+        if not fallback.exists():
+            sample_files = list(SAMPLE_DIR.glob("*.mp3"))
+            fallback = random.choice(sample_files) if sample_files else None
+        if fallback and fallback.exists():
+            shutil.copy(fallback, output_file)
         else:
             output_file.write_bytes(b"FAKE_AUDIO_CONTENT")
         filename = output_file.name
+        status = "fallback"
     else:
         output_file = OUTPUT_DIR / filename
 
     # Append log
     with LOG_FILE.open("a") as logf:
         timestamp = datetime.utcnow().isoformat()
-        logf.write(f"{timestamp} | {prompt} | {duration} | {filename}\n")
+        logf.write(f"[{timestamp}] {prompt} | {duration} | {filename} | {status}\n")
 
     return JSONResponse({"file_url": f"/download/{filename}"})
 
 @app.get("/download/{filename}")
 async def download(filename: str):
     file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
+    if not file_path.exists() or file_path.suffix != ".mp3":
         raise HTTPException(status_code=404, detail="File not found")
-    media_type = "audio/wav" if file_path.suffix == ".wav" else "audio/mpeg"
-    return FileResponse(file_path, media_type=media_type, filename=filename)
+    return FileResponse(file_path, media_type="audio/mpeg", filename=filename)
 
 
 if __name__ == "__main__":
