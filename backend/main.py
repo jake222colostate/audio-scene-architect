@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
@@ -10,6 +10,7 @@ import os
 import logging
 import datetime, traceback
 from pydub import AudioSegment
+from pydantic import BaseModel
 
 REQUIRED_DIRS = ["output_audio", "sample_audio", "uploads", "audioldm/weights"]
 
@@ -110,7 +111,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def generate_sfx_clip(prompt: str, duration: int) -> str:
+def generate_sfx_clip(prompt: str, duration: int) -> str | None:
     try:
         import uuid as _uuid
         import os
@@ -128,9 +129,10 @@ def generate_sfx_clip(prompt: str, duration: int) -> str:
         log_error(f"SFX failed for: {prompt}", e)
         return None
 
-
-def generate_audio_from_text(prompt: str, duration: int):
-    """Generate an audio file from text using AudioCraft."""
+def generate_audio_from_text(
+    prompt: str, duration: int, sfx_list: list[str] | None = None
+) -> tuple[str, list[str]]:
+    """Generate an audio file from text using AudioCraft and optional SFX."""
     try:
         from audiocraft.data.audio import audio_write
 
@@ -150,16 +152,19 @@ def generate_audio_from_text(prompt: str, duration: int):
         os.remove(filepath)
 
         base_audio = AudioSegment.from_mp3(mp3_path)
-        for _ in range(random.randint(1, 2)):
-            s_prompt = random.choice(sfx_prompts)
+        sfx_used: list[str] = []
+        prompts_to_use = sfx_list if sfx_list else random.sample(sfx_prompts, 2)
+        for s_prompt in prompts_to_use:
             try:
                 sfx_file = generate_sfx_clip(s_prompt, 3)
                 if sfx_file:
                     overlay = AudioSegment.from_wav(sfx_file) - 8
                     start_ms = random.randint(0, max(0, len(base_audio) - len(overlay)))
                     base_audio = base_audio.overlay(overlay, position=start_ms)
+                    sfx_used.append(s_prompt)
                     os.remove(sfx_file)
-            except Exception:
+            except Exception as e:
+                log_error(f"SFX overlay failed: {s_prompt}", e)
                 continue
 
         final_name = f"{uuid.uuid4()}.mp3"
@@ -167,7 +172,7 @@ def generate_audio_from_text(prompt: str, duration: int):
         base_audio.export(final_path, format="mp3")
         os.remove(mp3_path)
 
-        return final_name
+        return final_name, sfx_used
     except Exception as e:
         log_error(f"AudioCraft failed for: {prompt}", e)
         fallback_path = "sample_audio/fallback.mp3"
@@ -175,17 +180,25 @@ def generate_audio_from_text(prompt: str, duration: int):
             import shutil, uuid
             new_file = f"{uuid.uuid4()}.mp3"
             shutil.copy(fallback_path, f"output_audio/{new_file}")
-            return new_file
+            return new_file, []
         else:
             raise HTTPException(status_code=500, detail="Audio generation and fallback both failed.")
 
+
+
+class GenerateAudioRequest(BaseModel):
+    prompt: str
+    duration: int
+    sfx_prompts: list[str] | None = None
+
+
 @app.post("/generate-audio")
-async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
-    if duration not in {30, 60, 90, 120}:
+async def generate_audio(data: GenerateAudioRequest):
+    if data.duration not in {30, 60, 90, 120}:
         raise HTTPException(status_code=400, detail="Invalid duration. Must be 30, 60, 90, or 120 seconds")
 
     try:
-        filename = generate_audio_from_text(prompt, duration)
+        filename, used = generate_audio_from_text(data.prompt, data.duration, data.sfx_prompts)
     except Exception as e:
         log_error("generate-audio endpoint failed", e)
         raise HTTPException(status_code=500, detail="Audio generation failed. Check /diagnostic or error_log.txt.")
@@ -196,13 +209,33 @@ async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
     with LOG_FILE.open("a") as logf:
         timestamp = datetime.utcnow().isoformat()
         logf.write(
-            f"[{timestamp}] {prompt} | {filename} | {status}\n"
+            f"[{timestamp}] {data.prompt} | {filename} | {status}\n"
         )
 
-    return JSONResponse({
+    return JSONResponse(
+        {
+            "file_url": f"/download/{filename}",
+            "sfx_used": used,
+            "status": status,
+        }
+    )
+
+
+@app.get("/test-audio")
+async def test_audio():
+    """Self-test endpoint to verify audio generation stack"""
+    prompt = "eerie cavern with unsettling whispers"
+    sfx_prompts = ["whispers", "footsteps"]
+    try:
+        filename, used = generate_audio_from_text(prompt, 30, sfx_prompts)
+    except Exception as e:
+        log_error("test-audio endpoint failed", e)
+        raise HTTPException(status_code=500, detail="Test generation failed.")
+    return {
         "file_url": f"/download/{filename}",
-        "status": status,
-    })
+        "sfx_used": used,
+        "status": "success",
+    }
 
 
 @app.post("/upload-video")

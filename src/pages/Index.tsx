@@ -37,10 +37,10 @@ const Index = () => {
 
       const data = await response.json();
       
-      if (data.filename) {
+      if (data.file_url) {
         setGeneratedAudio({
-          url: `/download/${data.filename}`,
-          filename: data.filename,
+          url: data.file_url,
+          filename: data.file_url.split('/').pop() || 'audio.mp3',
         });
         
         toast({
