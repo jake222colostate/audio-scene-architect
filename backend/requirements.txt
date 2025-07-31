@@ -11,3 +11,4 @@ audioldm @ git+https://github.com/haoheliu/AudioLDM.git
 librosa
 accelerate
 einops
+openai-whisper
