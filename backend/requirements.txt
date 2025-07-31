@@ -7,3 +7,7 @@ pydub  # requires ffmpeg installed on the system
 python-multipart
 uuid
 requests
+audioldm @ git+https://github.com/haoheliu/AudioLDM.git
+librosa
+accelerate
+einops
