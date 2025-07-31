@@ -8,8 +8,7 @@ from datetime import datetime
 import uuid
 import os
 import logging
-import traceback
-import datetime as _dt
+import datetime, traceback
 from pydub import AudioSegment
 
 REQUIRED_DIRS = ["output_audio", "sample_audio", "audioldm/weights"]
@@ -53,12 +52,12 @@ BASE_DIR = Path(__file__).parent
 SAMPLE_DIR = BASE_DIR / "sample_audio"
 OUTPUT_DIR = BASE_DIR / "output_audio"
 LOG_FILE = BASE_DIR / "audio_logs.txt"
-ERROR_LOG = BASE_DIR / "error_log.txt"
 
 
-def log_error(msg: str) -> None:
-    with ERROR_LOG.open("a") as f:
-        f.write(f"[{_dt.datetime.now()}] {msg}\n")
+def log_error(tag: str, err: Exception) -> None:
+    with open("error_log.txt", "a") as f:
+        f.write(f"[{datetime.datetime.now()}] {tag}\n")
+        f.write(traceback.format_exc() + "\n")
 
 # Predefined horror prompts for SFX generation
 sfx_prompts = [
@@ -90,7 +89,7 @@ def generate_sfx_clip(prompt: str, duration: int) -> str:
         torchaudio.save(filepath, audio.squeeze(0), 16000)
         return filepath
     except Exception as e:
-        log_error(f"SFX Failed | Prompt: {prompt}\n{traceback.format_exc()}")
+        log_error(f"SFX failed for: {prompt}", e)
         return None
 
 
@@ -115,11 +114,8 @@ def generate_audio_from_text(prompt: str, duration: int):
         os.remove(filepath)
 
         base_audio = AudioSegment.from_mp3(mp3_path)
-
-        sfx_used = []
         for _ in range(random.randint(1, 2)):
             s_prompt = random.choice(sfx_prompts)
-            sfx_used.append(s_prompt)
             try:
                 sfx_file = generate_sfx_clip(s_prompt, 3)
                 if sfx_file:
@@ -135,15 +131,17 @@ def generate_audio_from_text(prompt: str, duration: int):
         base_audio.export(final_path, format="mp3")
         os.remove(mp3_path)
 
-        return final_name, sfx_used
-    except Exception:
-        log_error(f"AudioCraft Failed | Prompt: {prompt}\n{traceback.format_exc()}")
-        fallback = SAMPLE_DIR / "fallback.mp3"
-        if fallback.exists():
-            dest = OUTPUT_DIR / f"{uuid.uuid4()}.mp3"
-            shutil.copy(fallback, dest)
-            return dest.name, []
-        raise HTTPException(status_code=500, detail="AudioCraft generation failed.")
+        return final_name
+    except Exception as e:
+        log_error(f"AudioCraft failed for: {prompt}", e)
+        fallback_path = "sample_audio/fallback.mp3"
+        if os.path.exists(fallback_path):
+            import shutil, uuid
+            new_file = f"{uuid.uuid4()}.mp3"
+            shutil.copy(fallback_path, f"output_audio/{new_file}")
+            return new_file
+        else:
+            raise HTTPException(status_code=500, detail="Audio generation and fallback both failed.")
 
 @app.post("/generate-audio")
 async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
@@ -151,24 +149,22 @@ async def generate_audio(prompt: str = Form(...), duration: int = Form(...)):
         raise HTTPException(status_code=400, detail="Invalid duration. Must be 30, 60, 90, or 120 seconds")
 
     try:
-        filename, sfx_layers = generate_audio_from_text(prompt, duration)
-        status = "success"
-    except Exception as exc:
-        log_error(f"POST /generate-audio failed: {exc}")
-        raise HTTPException(status_code=500, detail="Internal generation error")
+        filename = generate_audio_from_text(prompt, duration)
+    except Exception as e:
+        log_error("generate-audio endpoint failed", e)
+        raise HTTPException(status_code=500, detail="Audio generation failed. Check /diagnostic or error_log.txt.")
+    status = "success"
     output_file = OUTPUT_DIR / filename
 
     # Append log
     with LOG_FILE.open("a") as logf:
         timestamp = datetime.utcnow().isoformat()
-        sfx_str = ",".join(sfx_layers) if sfx_layers else "none"
         logf.write(
-            f"[{timestamp}] {prompt} | {filename} | {sfx_str} | {status}\n"
+            f"[{timestamp}] {prompt} | {filename} | {status}\n"
         )
 
     return JSONResponse({
         "file_url": f"/download/{filename}",
-        "sfx": sfx_layers,
         "status": status,
     })
 
@@ -181,28 +177,35 @@ async def download(filename: str):
 
 
 @app.get("/diagnostic")
-def run_tests():
-    results = []
+def run_diagnostic():
+    from os.path import exists
+    checks = {
+        "AudioCraft installed": False,
+        "AudioLDM installed": False,
+        "FFMPEG available": False,
+        "output_audio folder": exists("output_audio"),
+        "fallback file": exists("sample_audio/fallback.mp3"),
+    }
 
     try:
-        model = musicgen.MusicGen.get_pretrained('small')
-        model.set_generation_params(duration=5)
-        model.generate(["test audio"])
-        results.append("\u2705 AudioCraft OK")
-    except Exception:
-        results.append("\u274c AudioCraft FAILED")
+        from audiocraft.models import musicgen
+        model = musicgen.MusicGen.get_pretrained("small")
+        checks["AudioCraft installed"] = True
+    except:
+        pass
 
     try:
+        from audioldm import AudioLDM
         model = AudioLDM()
-        model.generate("test sfx", duration=2)
-        results.append("\u2705 AudioLDM OK")
-    except Exception:
-        results.append("\u274c AudioLDM FAILED")
+        checks["AudioLDM installed"] = True
+    except:
+        pass
 
-    for d in REQUIRED_DIRS:
-        results.append(f"\u2705 Found {d}" if os.path.exists(d) else f"\u274c Missing {d}")
+    from shutil import which
+    if which("ffmpeg"):
+        checks["FFMPEG available"] = True
 
-    return {"results": results}
+    return checks
 
 
 if __name__ == "__main__":
