@@ -1,0 +1,2 @@
+audiocraft @ git+https://github.com/facebookresearch/audiocraft.git@main
+git+https://github.com/haoheliu/AudioLDM.git#egg=AudioLDM

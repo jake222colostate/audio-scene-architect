@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* SoundForge.AI Dark Cinematic Theme */
+    --background: 225 14% 7%;
+    --foreground: 210 40% 98%;
+
+    --card: 224 15% 9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 224 15% 9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 259 100% 65%;
+    --primary-foreground: 225 14% 7%;
+
+    --secondary: 224 20% 12%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 224 20% 12%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 259 83% 55%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 224 25% 15%;
+    --input: 224 25% 15%;
+    --ring: 259 100% 65%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 48 96% 53%;
+    --warning-foreground: 225 14% 7%;
+
+    /* Custom cinematic gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(259 100% 65%), hsl(235 89% 70%));
+    --gradient-background: linear-gradient(180deg, hsl(225 14% 7%), hsl(225 20% 5%));
+    --gradient-card: linear-gradient(135deg, hsl(224 15% 9%), hsl(224 20% 11%));
+    
+    /* Glow effects */
+    --glow-primary: 0 0 30px hsl(259 100% 65% / 0.3);
+    --glow-accent: 0 0 20px hsl(259 83% 55% / 0.2);
+    
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Developer Console Panel - Protected from build purging */
+@layer components {
+  .console {
+    background-color: #000 !important;
+    color: #e5e7eb !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace !important;
+    padding: 1rem !important;
+    border-radius: 0.5rem !important;
+    overflow-y: auto !important;
+    max-height: 16rem !important;
+    line-height: 1.4 !important;
+    font-size: 0.875rem !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+  }
+  
+  .console::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .console::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 4px;
+  }
+  
+  .console::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 4px;
+  }
+  
+  .console::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+  
+  /* Ensure console is always visible in deployment */
+  .console-container {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+}
