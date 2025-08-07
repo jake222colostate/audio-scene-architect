@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Wand2, Clock } from 'lucide-react';
 
 interface AudioFormProps {
   onSubmit: (prompt: string, duration: number) => void;
   isLoading: boolean;
-  error?: {error: string, trace: string, status: number} | null;
+  error?: { error: string; trace: string; status: number } | null;
 }
 
 export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
@@ -17,64 +16,34 @@ export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (prompt.trim()) {
-      onSubmit(prompt.trim(), parseInt(duration));
+    const dur = parseInt(duration, 10);
+
+    if (isNaN(dur) || dur < 10 || dur > 60) {
+      alert('Duration must be between 10 and 60 seconds.');
+      return;
     }
+    if (!prompt.trim()) {
+      alert('Please enter a prompt.');
+      return;
+    }
+    onSubmit(prompt.trim(), dur);
   };
 
-  const examplePrompts = [
-    "Epic battle scene with orchestral crescendo and thunderous drums",
-    "Mysterious forest ambiance with subtle magic and whispers",
-    "Futuristic cityscape with electronic undertones and distant traffic",
-    "Romantic piano melody under a starlit sky with gentle strings"
-  ];
-
   return (
-    <div className="bg-gradient-card p-6 rounded-lg border border-border space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-xl font-semibold text-foreground">Generate Cinematic Audio</h2>
-        <p className="text-sm text-muted-foreground">
-          Describe your scene and let AI create the perfect soundtrack
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Prompt Input */}
-        <div className="space-y-3">
-          <Label htmlFor="prompt" className="text-sm font-medium text-foreground">
-            Scene Description
-          </Label>
+    <div className="w-full max-w-2xl mx-auto">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+        {/* Prompt */}
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="prompt" className="text-foreground/80">Audio Prompt</Label>
           <Textarea
             id="prompt"
-            placeholder="Describe the cinematic scene you want audio for..."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="min-h-[120px] resize-none bg-secondary/50 border-border focus:border-primary transition-colors"
-            disabled={isLoading}
+            placeholder='e.g., "spaceship corridor hum", "leaves crunching under footsteps"'
+            className="min-h-[120px] bg-secondary/50 border-border"
           />
-          
-          {/* Example Prompts */}
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Try these examples:</p>
-            <div className="grid gap-2">
-              {examplePrompts.map((example, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  onClick={() => setPrompt(example)}
-                  className="text-left text-xs p-2 rounded bg-muted/50 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                  disabled={isLoading}
-                >
-                  "{example}"
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
-        {/* Duration Selection */}
-        <div className="space-y-3">
-          
         {/* Duration */}
         <div className="flex flex-col gap-2">
           <Label htmlFor="duration" className="text-foreground/80 flex items-center gap-2">
@@ -91,41 +60,31 @@ export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
             className="bg-secondary/50 border border-border rounded-md px-3 py-2 outline-none focus:border-primary"
           />
         </div>
-{/* Error Message */}
+
+        {/* Submit */}
+        <div className="flex items-center justify-between">
+          <Button type="submit" disabled={isLoading}>
+            <Wand2 className="w-4 h-4 mr-2" />
+            {isLoading ? 'Generating…' : 'Generate Audio'}
+          </Button>
+        </div>
+
+        {/* Error Message */}
         {error && (
-          <div className="bg-destructive/10 text-destructive p-4 rounded border border-destructive/20 overflow-auto font-mono text-sm whitespace-pre-wrap select-text max-h-96">
-            <div className="mb-2">
-              <strong>Error (Status {error.status}):</strong> {error.error}
-            </div>
+          <div className="bg-destructive/10 text-destructive p-4 rounded-md border border-destructive/20 overflow-auto font-mono text-sm whitespace-pre-wrap">
+            <div className="font-semibold mb-1">Error</div>
+            <div>{error.error}</div>
             {error.trace && (
-              <div>
-                <strong>Stack Trace:</strong>
-                <pre className="mt-1 text-xs opacity-80">{error.trace}</pre>
-              </div>
+              <>
+                <div className="mt-2 font-semibold">Trace</div>
+                <pre className="whitespace-pre-wrap">{error.trace}</pre>
+              </>
             )}
           </div>
         )}
-
-        {/* Submit Button */}
-        <Button
-          type="submit"
-          disabled={!prompt.trim() || isLoading}
-          className="w-full bg-gradient-primary hover:shadow-glow-primary transition-all duration-300 font-medium"
-          size="lg"
-        >
-          {isLoading ? (
-            <>
-              <div className="w-4 h-4 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin mr-2" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <Wand2 className="w-4 h-4 mr-2" />
-              Generate Audio
-            </>
-          )}
-        </Button>
       </form>
     </div>
   );
 };
+
+export default AudioForm;
