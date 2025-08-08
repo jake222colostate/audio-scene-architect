@@ -1,10 +1,12 @@
 # ---- Frontend build (optional) ----
 FROM node:20-slim AS frontend
-WORKDIR /app/frontend
-COPY frontend/package*.json ./ 2>/dev/null || true
-RUN [ -f package.json ] && npm ci || true
-COPY frontend ./ 2>/dev/null || true
-RUN [ -f package.json ] && npm run build || true
+WORKDIR /app
+COPY . .
+RUN if [ -f frontend/package.json ]; then \
+      cd frontend && npm ci && npm run build; \
+    else \
+      mkdir -p frontend/dist; \
+    fi
 
 # ---- Backend runtime ----
 FROM python:3.11-slim AS runtime
