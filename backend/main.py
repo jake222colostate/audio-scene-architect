@@ -40,7 +40,30 @@ app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
 # Optionally serve frontend (if built)
 if FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists():
+        print(f"[STARTUP] Serving frontend assets from {assets_dir} at /assets")
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        print(f"[STARTUP] Frontend index found at {index_file}; enabling SPA fallback")
+
+        @app.get("/")
+        async def serve_root():
+            print("[FRONTEND] Serving index.html for /")
+            return FileResponse(str(index_file))
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str):
+            # Let API routes be handled by routers, not the SPA fallback
+            if full_path.startswith("api"):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            print(f"[FRONTEND] SPA fallback for /{full_path}")
+            return FileResponse(str(index_file))
+    else:
+        print(f"[STARTUP] ⚠️ Frontend index not found at {index_file}")
+else:
+    print(f"[STARTUP] ⚠️ FRONTEND_DIST not found at {FRONTEND_DIST}")
 
 
 @app.middleware("http")
