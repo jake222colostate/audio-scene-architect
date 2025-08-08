@@ -30,6 +30,10 @@ def api_health():
 def root_health():
     return {"status": "ok"}
 
+@app.get("/api/ping", tags=["health"])
+def ping():
+    return {"status": "alive", "port": 8000}
+
 # Additional diagnostics
 @app.get("/", include_in_schema=False)
 def root_ok():
