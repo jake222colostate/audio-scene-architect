@@ -16,7 +16,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 # System deps for soundfile/libsndfile
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libsndfile1 ffmpeg && \
+    build-essential libsndfile1 ffmpeg curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy backend
@@ -33,12 +33,5 @@ COPY --from=frontend /app/dist /app/frontend/dist
 # Launch
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD python - <<'PY' || exit 1
-import urllib.request, sys
-try:
-    with urllib.request.urlopen("http://127.0.0.1:8000/api/health", timeout=3) as r:
-        sys.exit(0 if r.status == 200 else 1)
-except Exception:
-    sys.exit(1)
-PY
+  CMD curl -fsS http://127.0.0.1:8000/api/health >/dev/null || exit 1
 CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
