@@ -42,11 +42,17 @@ app.add_middleware(
 # Serve frontend assets
 frontend_dir = os.path.join(os.path.dirname(__file__), "dist")
 if os.path.exists(frontend_dir):
+    print(f"[STARTUP] Frontend build found at {frontend_dir}; mounting /assets")
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dir, "assets")), name="assets")
+else:
+    print(f"[STARTUP] ⚠️ Frontend build not found at {frontend_dir}")
 
 # Serve generated audio files
 if OUTPUT_DIR.exists():
+    print(f"[STARTUP] Mounting generated audio from {OUTPUT_DIR} at /audio")
     app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
+else:
+    print(f"[STARTUP] ⚠️ OUTPUT_DIR not found at {OUTPUT_DIR}")
 
 # Include routers
 app.include_router(health_router)
@@ -63,10 +69,12 @@ def startup_event():
 
 # Serve frontend for all unmatched routes (SPA support)
 @app.get("/{path:path}")
-async def serve_frontend():
+async def serve_frontend(path: str):
     """Serve the frontend for SPA routing."""
     frontend_file = os.path.join(frontend_dir, "index.html")
     if os.path.exists(frontend_file):
+        print(f"[FRONTEND] Serving React app for path: /{path}")
         from fastapi.responses import FileResponse
         return FileResponse(frontend_file)
+    print("[FRONTEND] Frontend not found; dist directory missing")
     return {"message": "Frontend not found"}
