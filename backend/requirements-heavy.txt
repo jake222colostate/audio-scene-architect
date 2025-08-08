@@ -1,0 +1,7 @@
+# Install only when building a GPU image or enabling real models.
+torch
+torchaudio
+accelerate>=0.25
+einops>=0.6
+# audiocraft (pin a commit as needed)
+# audiocraft @ git+https://github.com/facebookresearch/audiocraft.git

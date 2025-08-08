@@ -18,8 +18,8 @@ export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
     e.preventDefault();
     const dur = parseInt(duration, 10);
 
-    if (isNaN(dur) || dur < 10 || dur > 60) {
-      alert('Duration must be between 10 and 60 seconds.');
+    if (isNaN(dur) || dur < 1 || dur > 120) {
+      alert('Duration must be between 1 and 120 seconds.');
       return;
     }
     if (!prompt.trim()) {
@@ -47,13 +47,13 @@ export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
         {/* Duration */}
         <div className="flex flex-col gap-2">
           <Label htmlFor="duration" className="text-foreground/80 flex items-center gap-2">
-            <Clock className="w-4 h-4" /> Duration (10–60s)
+            <Clock className="w-4 h-4" /> Duration (1–120s)
           </Label>
           <input
             id="duration"
             type="number"
-            min={10}
-            max={60}
+            min={1}
+            max={120}
             step={1}
             value={duration}
             onChange={(e) => setDuration(e.target.value)}

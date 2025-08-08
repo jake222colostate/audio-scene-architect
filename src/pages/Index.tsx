@@ -5,6 +5,8 @@ import { ConsolePanel } from '@/components/ConsolePanel';
 import soundforgeLogo from '@/assets/soundforge-logo.png';
 import { useToast } from '@/hooks/use-toast';
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
 interface GeneratedAudio {
   url: string;
   filename: string;
@@ -148,7 +150,7 @@ const Index = () => {
 
     try {
       // Call the FastAPI backend
-      const response = await fetch('/api/generate-audio', {
+      const response = await fetch(`${API_BASE}/api/generate-audio`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,26 +187,27 @@ const Index = () => {
       }
 
       const data = await response.json();
-      
-      // Add to audio requests for tracking
-      if (data.status === 'queued') {
-        const newRequest: AudioRequest = {
-          filename: data.filename,
-          prompt: prompt,
-          status: "queued"
-        };
-        
-        logLine(`✅ Audio generation queued successfully: ${data.filename}`);
-        logLine(`🎯 File URL will be: ${data.file_url}`);
-        
-        setAudioRequests(prev => [newRequest, ...prev]);
-        
+      const reqId = response.headers.get('X-Request-Id') || '';
+      const elapsedHeader = response.headers.get('X-Elapsed-Ms');
+      const elapsed = elapsedHeader ? parseInt(elapsedHeader, 10) : undefined;
+      if (elapsed !== undefined && !Number.isNaN(elapsed)) {
+        logLine(`⏱️ Backend elapsed: ${elapsed} ms`);
+      }
+      if (reqId) {
+        logLine(`🧾 Request ID: ${reqId}`);
+      }
+      if (data?.ok && data?.url) {
+        setGeneratedAudio({
+          url: data.url,
+          filename: (data?.path && typeof data.path === 'string' ? data.path.split('/').pop() : '') || data.url.split('/').pop() || ''
+        });
         toast({
-          title: "Audio Generation Queued",
-          description: "Your audio has been added to the generation queue.",
+          title: 'Audio Ready',
+          description: 'Your audio has been generated.',
         });
       } else {
-        logLine(`⚠️ Unexpected response status: ${data.status}`, 'WARNING');
+        const msg = data?.detail || data?.error || 'Generation failed';
+        throw new Error(msg);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "There was an error generating your audio. Please try again.";
