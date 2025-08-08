@@ -1,5 +1,5 @@
 # backend/main.py
-import logging, os, uuid, time
+import os, logging, uuid, time
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +21,7 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# Direct health endpoints (cannot disappear)
+# Direct health endpoints (cannot vanish)
 @app.get("/api/health", tags=["health"])
 def api_health():
     return {"status": "ok"}
@@ -30,38 +30,19 @@ def api_health():
 def root_health():
     return {"status": "ok"}
 
-@app.get("/api/ping", tags=["health"])
-def ping():
-    return {"status": "alive", "port": 8000}
-
-# Additional diagnostics
-@app.get("/", include_in_schema=False)
-def root_ok():
-    return {"status": "ok"}
-
-@app.get("/routes", include_in_schema=False)
-def routes_list():
-    items = []
-    for r in app.router.routes:
-        methods = ",".join(sorted(getattr(r, "methods", ["GET"])))
-        path = getattr(r, "path", "")
-        items.append(f"{methods} {path}")
-    return {"routes": items}
-
-# Routers
-app.include_router(health_router)                 # /health (dup OK)
-app.include_router(health_router, prefix="/api")  # /api/health (dup OK)
-app.include_router(audio_router,  prefix="/api")  # /api/generate-audio
+# Routers (prefix-free inside files)
+app.include_router(health_router)                 # -> /health
+app.include_router(health_router, prefix="/api")  # -> /api/health
+app.include_router(audio_router,  prefix="/api")  # -> /api/generate-audio
 
 # Static for generated audio
 app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
-# Frontend (MOUNT LAST so it never swallows /api/*)
+# Serve SPA at root — mount LAST so it never swallows /api/*
 if FRONTEND_DIST.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
-
-# Timing + request id
+# Add timing + request id
 @app.middleware("http")
 async def timing(request: Request, call_next):
     rid = str(uuid.uuid4())[:8]
@@ -83,11 +64,4 @@ async def log_routes():
         path = getattr(r, "path", "")
         lines.append(f"{methods:7s} {path}")
     logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
-    try:
-        import backend, backend.routes.health as h, backend.routes.audio as a  # type: ignore
-        logging.getLogger("uvicorn.error").info(f"backend pkg: {getattr(backend, '__file__', 'n/a')}")
-        logging.getLogger("uvicorn.error").info(f"health.py: {getattr(h, '__file__', 'n/a')}")
-        logging.getLogger("uvicorn.error").info(f"audio.py:  {getattr(a, '__file__', 'n/a')}")
-    except Exception as e:
-        logging.getLogger("uvicorn.error").warning(f"route log import check failed: {e}")
-    logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health")
+    logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health; SPA served if /frontend/dist exists")

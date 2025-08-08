@@ -35,8 +35,15 @@ jobs:
           echo "=== Testing health endpoints ==="
           curl -f http://localhost:8000/api/health || exit 1
           echo "✅ /api/health endpoint working!"
-          echo "=== Container logs (last 20 lines) ==="
-          docker logs test-container | tail -20
+          
+          echo "=== Testing generate-audio endpoint ==="
+          curl -s -X POST http://localhost:8000/api/generate-audio \
+            -H "Content-Type: application/json" \
+            -d '{"prompt":"leaves crunching under footsteps","duration":5}' || exit 1
+          echo "✅ /api/generate-audio endpoint responded!"
+          
+          echo "=== Container logs (recent) ==="
+          docker logs test-container --since=10s | sed -n '1,160p'
           
           docker stop test-container
           docker rm test-container
