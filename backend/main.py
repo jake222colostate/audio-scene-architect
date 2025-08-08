@@ -56,8 +56,9 @@ app.include_router(audio_router,  prefix="/api")  # /api/generate-audio
 # Static for generated audio
 app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
-# Frontend serving is optional and disabled here to avoid any chance
-# of swallowing API routes. Deploy a separate static server if needed.
+# Frontend (MOUNT LAST so it never swallows /api/*)
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 
 # Timing + request id
