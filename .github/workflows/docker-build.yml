@@ -32,9 +32,9 @@ jobs:
           echo "=== Container status ==="
           docker ps -a | grep test-container
           
-      echo "=== Testing health endpoints ==="
-      curl -f http://localhost:8000/api/health || exit 1
-      echo "✅ /api/health endpoint working!"
+          echo "=== Testing health endpoints ==="
+          curl -f http://localhost:8000/api/health || exit 1
+          echo "✅ /api/health endpoint working!"
           echo "=== Container logs (last 20 lines) ==="
           docker logs test-container | tail -20
           
