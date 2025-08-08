@@ -1,5 +1,6 @@
 # backend/main.py
 import logging
+import os
 import uuid
 import time
 from pathlib import Path
@@ -27,18 +28,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- DIRECT health endpoints (cannot be hidden by bad router config) ---
-@app.get("/api/health", tags=["health"])
-def api_health():
-    return {"status": "ok"}
+DISABLE_HEALTH = os.getenv("DISABLE_HEALTHCHECKS", "0") == "1"
 
-@app.get("/health", tags=["health"])
-def root_health():
-    return {"status": "ok"}
+# --- DIRECT health endpoints (cannot be hidden by bad router config) ---
+if not DISABLE_HEALTH:
+    @app.get("/api/health", tags=["health"])
+    def api_health():
+        return {"status": "ok"}
+
+    @app.get("/health", tags=["health"])
+    def root_health():
+        return {"status": "ok"}
 
 # --- Routers (backup; safe if someone edits them later) ---
-app.include_router(health_router)                 # -> /health (again)
-app.include_router(health_router, prefix="/api")  # -> /api/health (again)
+if not DISABLE_HEALTH:
+    app.include_router(health_router)                 # -> /health (again)
+    app.include_router(health_router, prefix="/api")  # -> /api/health (again)
 app.include_router(audio_router, prefix="/api")   # -> /api/generate-audio
 
 # Static for generated audio
@@ -83,4 +88,7 @@ async def log_routes():
         path = getattr(r, "path", "")
         lines.append(f"{methods:10s} {path}")
     logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
-    logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health")
+    if not DISABLE_HEALTH:
+        logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health")
+    else:
+        logging.getLogger("uvicorn.error").info("⚠️ Health checks disabled (DISABLE_HEALTHCHECKS=1)")
