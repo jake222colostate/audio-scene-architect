@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from backend.routes.health import router as health_router
 from backend.routes.audio import router as audio_router
@@ -46,7 +46,20 @@ app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
 # Frontend (mount LAST so it doesn't swallow /api/*)
 if FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        @app.get("/")
+        async def serve_root():
+            return FileResponse(str(index_file))
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str):
+            if full_path.startswith("api"):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            return FileResponse(str(index_file))
 
 # Request timing headers
 @app.middleware("http")
