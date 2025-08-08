@@ -30,6 +30,20 @@ def api_health():
 def root_health():
     return {"status": "ok"}
 
+# Additional diagnostics
+@app.get("/", include_in_schema=False)
+def root_ok():
+    return {"status": "ok"}
+
+@app.get("/routes", include_in_schema=False)
+def routes_list():
+    items = []
+    for r in app.router.routes:
+        methods = ",".join(sorted(getattr(r, "methods", ["GET"])))
+        path = getattr(r, "path", "")
+        items.append(f"{methods} {path}")
+    return {"routes": items}
+
 # Routers
 app.include_router(health_router)                 # /health (dup OK)
 app.include_router(health_router, prefix="/api")  # /api/health (dup OK)
@@ -38,9 +52,9 @@ app.include_router(audio_router,  prefix="/api")  # /api/generate-audio
 # Static for generated audio
 app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
-# Serve built frontend (mount LAST so it never swallows /api/*)
-if FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+# Frontend serving is optional and disabled here to avoid any chance
+# of swallowing API routes. Deploy a separate static server if needed.
+
 
 # Timing + request id
 @app.middleware("http")
