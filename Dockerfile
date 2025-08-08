@@ -30,6 +30,9 @@ RUN if [ "$HEAVY" = "1" ]; then pip install --no-cache-dir -r backend/requiremen
 RUN mkdir -p /app/frontend/dist
 COPY --from=frontend /app/dist /app/frontend/dist
 
+# Prove what's inside the image (shallow tree)
+RUN python -c "import glob; print('DEBUG tree:'); [print(p) for p in glob.glob('/app/**', recursive=True) if p.count('/')<6]"
+
 # Launch
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
