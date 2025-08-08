@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette.responses import JSONResponse
 from starlette.middleware import Middleware
+import logging
 
 from backend.routes.health import router as health_router
 from backend.routes.audio import router as audio_router
@@ -30,9 +31,11 @@ middleware = [
 ]
 
 app = FastAPI(title="SoundForge.AI", version="0.1.0", middleware=middleware)
+logging.getLogger("uvicorn.error").info("✅ FastAPI started — health at /api/health (and /health)")
 
 # Routers
-app.include_router(health_router, prefix="/api")
+app.include_router(health_router)                 # /health
+app.include_router(health_router, prefix="/api")  # /api/health
 app.include_router(audio_router, prefix="/api")
 
 # Static mount for generated audio
@@ -64,6 +67,11 @@ if FRONTEND_DIST.exists():
         print(f"[STARTUP] ⚠️ Frontend index not found at {index_file}")
 else:
     print(f"[STARTUP] ⚠️ FRONTEND_DIST not found at {FRONTEND_DIST}")
+
+    @app.get("/")
+    async def root_ok():
+        # If no frontend is built, still serve 200 OK at root for probes
+        return JSONResponse({"status": "ok"})
 
 
 @app.middleware("http")
