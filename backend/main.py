@@ -1,10 +1,9 @@
-# backend/main.py
 import os, logging, uuid, time
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from backend.routes.health import router as health_router
 from backend.routes.audio import router as audio_router
 
@@ -21,7 +20,7 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# Direct health endpoints (cannot vanish)
+# Direct health endpoints (cannot disappear due to router mistakes)
 @app.get("/api/health", tags=["health"])
 def api_health():
     return {"status": "ok"}
@@ -30,19 +29,31 @@ def api_health():
 def root_health():
     return {"status": "ok"}
 
-# Routers (prefix-free inside files)
+# Routers (must be prefix-free inside files)
 app.include_router(health_router)                 # -> /health
 app.include_router(health_router, prefix="/api")  # -> /api/health
 app.include_router(audio_router,  prefix="/api")  # -> /api/generate-audio
 
-# Static for generated audio
+# Serve generated audio
 app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
-# Serve SPA at root — mount LAST so it never swallows /api/*
-if FRONTEND_DIST.exists():
+# Serve SPA at root if present; otherwise friendly landing page
+if FRONTEND_DIST.exists() and (FRONTEND_DIST / "index.html").exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    logging.getLogger("uvicorn.error").info(f"🌐 Serving SPA from {FRONTEND_DIST}")
+else:
+    @app.get("/", include_in_schema=False)
+    def landing():
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'>"
+            "<title>SoundForge.AI</title>"
+            "<h1>SoundForge.AI backend is running</h1>"
+            "<p>No SPA build found at <code>/app/frontend/dist</code>. "
+            "Visit <a href='/docs'>/docs</a> or POST to <code>/api/generate-audio</code>.</p>"
+        )
+    logging.getLogger("uvicorn.error").warning("⚠️ SPA not found; serving minimal landing page at '/'")
 
-# Add timing + request id
+# Timing + request id headers
 @app.middleware("http")
 async def timing(request: Request, call_next):
     rid = str(uuid.uuid4())[:8]
@@ -64,4 +75,6 @@ async def log_routes():
         path = getattr(r, "path", "")
         lines.append(f"{methods:7s} {path}")
     logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
-    logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health; SPA served if /frontend/dist exists")
+    logging.getLogger("uvicorn.error").info(
+        "✅ Health at /api/health and /health; SPA served at / if /frontend/dist exists"
+    )

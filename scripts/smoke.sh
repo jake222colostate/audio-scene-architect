@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "== Health =="
+# Local
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+PID=$!
+sleep 2
 curl -sf http://127.0.0.1:8000/api/health && echo
-curl -sf http://127.0.0.1:8000/health && echo
-
-echo "== Generate =="
 curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"leaves crunching under footsteps","duration":5}' | jq .
+  -d '{"prompt":"leaves crunching under footsteps","duration":5}'
+kill $PID
+wait $PID || true
+deactivate
+
+# Docker
+docker build -t soundforge:lite .
+CID=$(docker run -d -p 8000:8000 soundforge:lite)
+sleep 3
+curl -sf http://127.0.0.1:8000/api/health && echo
+curl -I http://127.0.0.1:8000/ | head -n1
+docker stop $CID >/dev/null
