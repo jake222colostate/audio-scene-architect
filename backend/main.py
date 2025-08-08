@@ -64,4 +64,11 @@ async def log_routes():
         path = getattr(r, "path", "")
         lines.append(f"{methods:7s} {path}")
     logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
+    try:
+        import backend, backend.routes.health as h, backend.routes.audio as a  # type: ignore
+        logging.getLogger("uvicorn.error").info(f"backend pkg: {getattr(backend, '__file__', 'n/a')}")
+        logging.getLogger("uvicorn.error").info(f"health.py: {getattr(h, '__file__', 'n/a')}")
+        logging.getLogger("uvicorn.error").info(f"audio.py:  {getattr(a, '__file__', 'n/a')}")
+    except Exception as e:
+        logging.getLogger("uvicorn.error").warning(f"route log import check failed: {e}")
     logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health")
