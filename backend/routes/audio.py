@@ -15,11 +15,17 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
     prompt = (payload.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
-    if not (1 <= payload.duration <= 120):
-        raise HTTPException(status_code=400, detail="Duration must be 1–120 seconds")
+    if not (1 <= payload.duration <= 30):
+        raise HTTPException(status_code=400, detail="Duration must be 1–30 seconds")
 
     t0 = time.time()
-    out_path = generate_file(prompt, payload.duration, OUTPUT_DIR)
+    out_path = generate_file(
+        prompt,
+        payload.duration,
+        OUTPUT_DIR,
+        sample_rate=payload.sample_rate,
+        seed=payload.seed,
+    )
 
     base = os.getenv("PUBLIC_BASE_URL") or str(request.headers.get("X-Public-Base-Url") or "")
     rel = f"/audio/{out_path.stem}.wav"
