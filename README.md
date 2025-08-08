@@ -225,3 +225,28 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **AudioLDM Team** for sound effects generation
 - **FastAPI** and **React** communities
 - **Lovable.dev** for development platform
+
+## Deployment notes
+
+- If serving behind a proxy, set PUBLIC_BASE_URL (e.g. https://<your-runpod-URL>).
+- Healthcheck is on /api/health.
+- Default build is “lite” (no heavy models). Use --build-arg HEAVY=1 for heavy image.
+
+### Test commands
+
+```bash
+# local
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# smoke test
+curl -f http://127.0.0.1:8000/api/health
+curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"leaves crunching under footsteps","duration":8}' | jq
+
+# docker
+docker build -t soundforge:lite .
+docker run --rm -p 8000:8000 -e PUBLIC_BASE_URL="http://localhost:8000" soundforge:lite
+```

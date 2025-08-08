@@ -1,10 +1,11 @@
+import os
 import time
+from urllib.parse import urljoin
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from backend.models.schemas import GenerateAudioRequest
 from backend.services.generate import generate_file
-from pathlib import Path
 
 router = APIRouter()
 
@@ -15,8 +16,18 @@ OUTPUT_DIR = APP_ROOT / "backend" / "output_audio"
 def generate_audio(payload: GenerateAudioRequest, request: Request):
     t0 = time.time()
     try:
-        out_path = generate_file(payload.prompt, payload.duration, OUTPUT_DIR)
-        url = f"/audio/{out_path.stem}.wav"
+        prompt = payload.prompt.strip()
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+        if not (1 <= payload.duration <= 120):
+            raise HTTPException(status_code=400, detail="Duration must be 1–120 seconds")
+
+        out_path = generate_file(prompt, payload.duration, OUTPUT_DIR)
+
+        base = os.getenv("PUBLIC_BASE_URL") or str(request.headers.get("X-Public-Base-Url") or "")
+        rel = f"/audio/{out_path.stem}.wav"
+        url = urljoin(base.rstrip("/") + "/", rel.lstrip("/")) if base else rel
+
         elapsed = int((time.time() - t0) * 1000)
         return JSONResponse(
             {
@@ -27,5 +38,7 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
             },
             headers={"X-Elapsed-Ms": str(elapsed)}
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

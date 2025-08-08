@@ -162,12 +162,11 @@ const Index = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ 
-          error: 'Unknown error', 
-          message: 'Server returned an error',
-          suggest: 'Try again with a different prompt'
-        }));
-        
+        const raw = await response.text().catch(() => "");
+        let errorData: any = {};
+        try { errorData = raw ? JSON.parse(raw) : {}; } catch {}
+        console.error("Generation error", response.status, raw);
+
         const errorMessage = errorData.message || errorData.error || `HTTP error! status: ${response.status}`;
         
         logLine(`❌ Backend returned error: ${errorMessage}`, 'ERROR');
