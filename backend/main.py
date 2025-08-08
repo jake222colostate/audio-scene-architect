@@ -29,6 +29,23 @@ def api_health():
 def root_health():
     return {"status": "ok"}
 
+
+@app.get("/api/version")
+def version():
+    import os
+    try:
+        import torch
+
+        cuda_ok = torch.cuda.is_available()
+        cuda = torch.version.cuda if cuda_ok else None
+    except Exception:
+        cuda_ok, cuda = False, None
+    return {
+        "use_heavy_env": os.getenv("USE_HEAVY", "0"),
+        "cuda_available": cuda_ok,
+        "cuda_version": cuda,
+    }
+
 # Routers (must be prefix-free inside files)
 app.include_router(health_router)                 # -> /health
 app.include_router(health_router, prefix="/api")  # -> /api/health
