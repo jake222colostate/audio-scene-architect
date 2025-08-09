@@ -1,33 +1,57 @@
 # syntax=docker/dockerfile:1.6
-ARG BASE_IMAGE=jakeypoov/audio-scene-architect:gpu-base
-FROM ${BASE_IMAGE}
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 SHELL ["/bin/bash","-euxo","pipefail","-c"]
 
 ARG BUILD_TAG=dev
-ENV BUILD_TAG=${BUILD_TAG}
+ENV BUILD_TAG=${BUILD_TAG} \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/app/.cache/huggingface \
+    TRANSFORMERS_CACHE=/app/.cache/huggingface
+
 WORKDIR /app
 
-# Frontend build in separate stage (cached with Buildx)
-FROM node:20-slim AS frontend
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN [ -f package.json ] && npm ci || true
-COPY frontend/ ./
-RUN [ -f package.json ] && npm run build || mkdir -p /app/frontend/dist
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv build-essential libsndfile1 ffmpeg curl git ca-certificates \
+ && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip \
+ && rm -rf /var/lib/apt/lists/*
 
-# Back to CUDA base with deps already installed
-FROM ${BASE_IMAGE}
-WORKDIR /app
-
-# Copy backend source last so small changes don’t bust earlier layers
+# Backend code
 COPY backend /app/backend
 
+# Install base reqs (must NOT include transformers/tokenizers/sentencepiece)
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# Install heavy reqs with CUDA wheels index
 RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cu121 \
     -r /app/backend/requirements-heavy.txt
 
-# Copy built frontend (if any)
-COPY --from=frontend /app/frontend/dist /app/frontend/dist
+# Print versions at build time (debug)
+RUN python - <<'PY'
+import sys
+
+def safe(ver): 
+    try: return ver
+    except: return None
+try:
+    import torch, torchaudio, transformers, tokenizers, sentencepiece, audiocraft, huggingface_hub, safetensors
+    print(">>> torch", torch.__version__, "cuda:", getattr(torch.version,'cuda',None), "cuda_ok:", torch.cuda.is_available())
+    print(">>> torchaudio", torchaudio.__version__)
+    print(">>> transformers", transformers.__version__)
+    print(">>> tokenizers", tokenizers.__version__)
+    print(">>> sentencepiece", getattr(sentencepiece,'__version__', 'ok'))
+    import importlib.metadata as md
+    print(">>> audiocraft", md.version('audiocraft'))
+    print(">>> huggingface-hub", huggingface_hub.__version__)
+    print(">>> safetensors", safetensors.__version__)
+except Exception as e:
+    print("IMPORT CHECK FAILED:", e, file=sys.stderr)
+PY
+
+# Optional: include built frontend if your repo has it (no-op if not present)
+RUN mkdir -p /app/frontend/dist
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \

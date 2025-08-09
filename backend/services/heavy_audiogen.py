@@ -2,7 +2,6 @@ import os
 from typing import Optional
 import numpy as np
 
-# Lazy imports inside functions for safety on CPU images
 _MODEL = None
 _LAST_ERROR: Optional[str] = None
 _DEFAULT_MODEL = os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium")
@@ -27,22 +26,9 @@ def _load_model():
     try:
         import torch
         from audiocraft.models import AudioGen
-    except ModuleNotFoundError as e:
-        missing = e.name or str(e)
-        if missing == "T5EncoderModel" or "T5EncoderModel" in missing:
-            _LAST_ERROR = (
-                "Missing dependency 'transformers' (T5EncoderModel). "
-                "Install heavy requirements: pip install -r backend/requirements-heavy.txt"
-            )
-        else:
-            _LAST_ERROR = f"Missing dependency: {missing}"
-        raise RuntimeError(_LAST_ERROR) from e
-    try:
         _MODEL = AudioGen.get_pretrained(_DEFAULT_MODEL).to("cuda")
-        _MODEL.set_generation_params(
-            duration=5, use_sampling=True, top_k=250, top_p=0.0,
-            temperature=1.0, cfg_coef=3.5
-        )
+        _MODEL.set_generation_params(duration=5, use_sampling=True, top_k=250, top_p=0.0,
+                                     temperature=1.0, cfg_coef=3.5)
         _LAST_ERROR = None
         return _MODEL
     except Exception as e:
@@ -50,17 +36,13 @@ def _load_model():
         raise
 
 def generate_wav(prompt: str, seconds: int, sample_rate: int = 44100, seed: Optional[int] = None) -> np.ndarray:
-    """Return mono float32 [-1,1] waveform at sample_rate using AudioGen; raise on failure."""
     global _LAST_ERROR
     _LAST_ERROR = None
-
     import torch, torchaudio
     model = _load_model()
     seconds = max(1, min(int(seconds), 30))
-    model.set_generation_params(
-        duration=seconds, use_sampling=True, top_k=250, top_p=0.0,
-        temperature=1.0, cfg_coef=3.5
-    )
+    model.set_generation_params(duration=seconds, use_sampling=True, top_k=250, top_p=0.0,
+                                temperature=1.0, cfg_coef=3.5)
     if seed is not None:
         torch.manual_seed(int(seed))
     try:
