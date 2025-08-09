@@ -45,3 +45,23 @@ Test URLs:
 - `/api/health`
 - `/docs`
 - `/`
+
+## Troubleshooting
+
+Quick checks for the audio generation endpoint:
+
+```bash
+# Correct request (should 200)
+curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"leaves crunching under footsteps","duration":8}' | jq
+
+# Bad request examples (should 422 with helpful detail):
+curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"", "duration": 10}' | jq
+
+curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"rain on car roof", "duration": ""}' | jq
+```

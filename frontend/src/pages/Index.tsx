@@ -7,6 +7,40 @@ import { useToast } from '@/hooks/use-toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+async function submitGenerate(prompt: string, durationInput: string | number) {
+  const duration = Math.max(1, Math.min(120, Number(durationInput || 0)));
+  if (!prompt.trim()) {
+    throw new Error("Please enter a prompt.");
+  }
+  if (!Number.isFinite(duration)) {
+    throw new Error("Duration must be a number.");
+  }
+
+  const res = await fetch(`${API_BASE}/api/generate-audio`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: prompt.trim(), duration }),
+  });
+
+  let text = "";
+  try { text = await res.text(); } catch { /* ignore */ }
+  if (!res.ok) {
+    let msg = "Generation failed.";
+    try {
+      const j = JSON.parse(text);
+      msg = j?.detail
+        ? (typeof j.detail === "string" ? j.detail
+           : Array.isArray(j.detail) ? j.detail.map((e: { msg?: string }) => e.msg || JSON.stringify(e)).join("; ")
+           : JSON.stringify(j.detail))
+        : (j?.error || text || msg);
+    } catch {
+      msg = text || msg;
+    }
+    throw new Error(msg);
+  }
+  return JSON.parse(text);
+}
+
 interface GeneratedAudio {
   url: string;
   filename: string;
@@ -149,52 +183,7 @@ const Index = () => {
     logLine(`⏱️ Duration: ${duration} seconds`);
 
     try {
-      // Call the FastAPI backend
-      const response = await fetch(`${API_BASE}/api/generate-audio`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt,
-          duration,
-        }),
-      });
-
-      if (!response.ok) {
-        const raw = await response.text().catch(() => "");
-        let errorData: any = {};
-        try { errorData = raw ? JSON.parse(raw) : {}; } catch {}
-        console.error("Generation error", response.status, raw);
-
-        const errorMessage = errorData.message || errorData.error || `HTTP error! status: ${response.status}`;
-        
-        logLine(`❌ Backend returned error: ${errorMessage}`, 'ERROR');
-        logLine(`📊 Response status: ${response.status}`, 'ERROR');
-        if (errorData.suggest) {
-          logLine(`💡 Suggestion: ${errorData.suggest}`, 'INFO');
-        }
-        
-        const fullError = {
-          error: errorMessage,
-          trace: errorData.detail || '',
-          status: response.status
-        };
-        setError(fullError);
-        setLastFailedRequest({ prompt, duration });
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
-      const reqId = response.headers.get('X-Request-Id') || '';
-      const elapsedHeader = response.headers.get('X-Elapsed-Ms');
-      const elapsed = elapsedHeader ? parseInt(elapsedHeader, 10) : undefined;
-      if (elapsed !== undefined && !Number.isNaN(elapsed)) {
-        logLine(`⏱️ Backend elapsed: ${elapsed} ms`);
-      }
-      if (reqId) {
-        logLine(`🧾 Request ID: ${reqId}`);
-      }
+      const data = await submitGenerate(prompt, duration);
       if (data?.ok && data?.url) {
         setGeneratedAudio({
           url: data.url,
@@ -210,15 +199,13 @@ const Index = () => {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "There was an error generating your audio. Please try again.";
-      
+
       logLine(`❌ Frontend error: ${errorMessage}`, 'ERROR');
       logLine(`🔄 You can retry by clicking the "Retry" button below`, 'INFO');
-      
-      // Set detailed error message for copyable display
+
       setErrorMsg(`❌ ${errorMessage}`);
       setLastFailedRequest({ prompt, duration });
-      
-      // If we don't already have a structured error, create one
+
       if (typeof err === 'string' || !err || typeof err !== 'object' || !('error' in err)) {
         setError({
           error: errorMessage,
@@ -226,9 +213,9 @@ const Index = () => {
           status: 0
         });
       }
-      
+
       toast({
-        title: "Generation Failed", 
+        title: "Generation Failed",
         description: errorMessage,
         variant: "destructive",
       });
