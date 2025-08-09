@@ -1,9 +1,10 @@
-import os, sys, platform, importlib, logging
+import os, sys, importlib, logging
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from backend.routes.audio import router as audio_router
+from backend.routes import meta as meta_routes
 
 app = FastAPI(title="SoundForge.AI", version="0.1.0")
 
@@ -14,6 +15,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s", stream=sys.stdout)
 BUILD_TAG = os.getenv("BUILD_TAG","dev")
+
+# Mount meta at both / and /api so /health and /api/health both work
+app.include_router(meta_routes.router, prefix="")
+app.include_router(meta_routes.router, prefix="/api")
 
 # Include routers
 app.include_router(audio_router, prefix="/api")
@@ -39,50 +44,6 @@ def selftest():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-@app.get("/api/health", tags=["meta"])
-def health():
-    return {"ok": True, "build": BUILD_TAG}
-
-def _detected_heavy_capable():
-    try:
-        import torch
-        from audiocraft.models import AudioGen
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
-
-@app.get("/api/version", tags=["meta"])
-def version():
-    cuda_ok = cuda_ver = dev = None
-    tf_ver = tok_ver = None
-    try:
-        import torch; cuda_ok = torch.cuda.is_available()
-        cuda_ver = getattr(torch.version, "cuda", None)
-        dev = torch.cuda.get_device_name(0) if cuda_ok else None
-    except Exception:
-        pass
-    try:
-        import transformers, tokenizers
-        tf_ver = transformers.__version__
-        tok_ver = tokenizers.__version__
-    except Exception:
-        pass
-    last = None
-    try:
-        heavy = importlib.import_module("backend.services.heavy_audiogen")
-        last = getattr(heavy, "last_error")()
-    except Exception:
-        pass
-    return {
-        "python": sys.version, "platform": platform.platform(), "build": BUILD_TAG,
-        "use_heavy_env": os.getenv("USE_HEAVY","0"), "allow_fallback": os.getenv("ALLOW_FALLBACK",""),
-        "audiogen_model": os.getenv("AUDIOGEN_MODEL","facebook/audiogen-medium"),
-        "cuda_available": cuda_ok, "cuda_version": cuda_ver, "device_name": dev,
-        "transformers_version": tf_ver, "tokenizers_version": tok_ver,
-        "detected_heavy_capable": _detected_heavy_capable(),
-        "last_heavy_error": last
-    }
-
 @app.get("/api/debug/state", tags=["debug"])
 def debug_state():
     info = {"env": {
@@ -97,21 +58,31 @@ def debug_state():
             info["modules"][m] = f"missing: {e}"
     return JSONResponse(info)
 
+@app.get("/api/debug/routes", tags=["debug"])
+def debug_routes():
+    items = []
+    for r in app.router.routes:
+        methods = sorted(getattr(r, "methods", ["GET"]))
+        items.append({"path": getattr(r, "path", ""), "methods": methods})
+    return JSONResponse(items)
+
 @app.on_event("startup")
-async def _startup_diag():
-    logging.getLogger("uvicorn.error").info(f"BUILD_TAG={BUILD_TAG}")
+async def _log_routes_and_versions():
+    import importlib
+    lg = logging.getLogger("uvicorn.error")
+    lg.info("BUILD_TAG=%s", BUILD_TAG)
+    for r in app.router.routes:
+        methods = ",".join(sorted(getattr(r, "methods", ["GET"])))
+        lg.info("ROUTE %s %s", methods, getattr(r, "path", ""))
     try:
         import transformers, tokenizers
-        logging.getLogger("uvicorn.error").info(
-            f"HF stack: transformers={transformers.__version__} tokenizers={tokenizers.__version__}"
-        )
+        lg.info("HF stack: transformers=%s tokenizers=%s", transformers.__version__, tokenizers.__version__)
     except Exception as e:
-        logging.getLogger("uvicorn.error").warning(f"HF import failed: {e}")
-    # Optional preload: do not crash on failure; we want server up for diagnostics
+        lg.warning("HF import failed: %s", e)
     if os.getenv("USE_HEAVY","0") == "1":
         try:
             heavy = importlib.import_module("backend.services.heavy_audiogen")
             getattr(heavy, "_load_model")()
-            logging.getLogger("uvicorn.error").info("✅ Heavy model loaded")
+            lg.info("✅ Heavy model loaded")
         except Exception as e:
-            logging.getLogger("uvicorn.error").warning(f"⚠️ Heavy preload failed: {e}")
+            lg.warning("⚠️ Heavy preload failed: %s", e)
