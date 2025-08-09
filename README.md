@@ -7,6 +7,7 @@ FastAPI backend with an optional Vite + React frontend.
 - `POST /api/generate-audio` → returns JSON with URL of generated file
 - Generated files served under `/audio/*`
 - SPA served from `/` when `frontend/dist` exists, otherwise a simple landing page
+- Debug diagnostics at `/api/_debug/{env,routes,torch,model}`
 
 ## Development
 ```bash
@@ -22,8 +23,16 @@ Visit http://127.0.0.1:8000/docs for interactive API docs.
 python -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
-sleep 2
-curl -sf http://127.0.0.1:8000/api/health && echo
+echo "=== Testing health endpoints ==="
+for i in {1..30}; do
+  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
+    echo "Health OK on attempt $i"
+    break
+  fi
+  echo "Health not ready yet (attempt $i); sleeping 1s"
+  sleep 1
+done
+curl -fsS http://127.0.0.1:8000/api/health >/dev/null && echo
 curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
   -H "Content-Type: application/json" \
   -d '{"prompt":"leaves crunching under footsteps","duration":5}'
@@ -31,8 +40,16 @@ curl -s -X POST http://127.0.0.1:8000/api/generate-audio \
 # Docker
 docker build -t soundforge:lite .
 docker run --rm -p 8000:8000 soundforge:lite &
-sleep 3
-curl -sf http://127.0.0.1:8000/api/health && echo
+echo "=== Testing health endpoints ==="
+for i in {1..30}; do
+  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
+    echo "Health OK on attempt $i"
+    break
+  fi
+  echo "Health not ready yet (attempt $i); sleeping 1s"
+  sleep 1
+done
+curl -fsS http://127.0.0.1:8000/api/health >/dev/null && echo
 curl -I http://127.0.0.1:8000/ | head -n1
 ```
 
