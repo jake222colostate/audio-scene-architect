@@ -46,19 +46,21 @@ def selftest():
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s", stream=sys.stdout)
 
 @app.on_event("startup")
-async def _log_routes_and_preflight():
+async def _preflight():
     logging.getLogger("uvicorn.error").info(f"BUILD_TAG={BUILD_TAG}")
     for r in app.router.routes:
         methods = ",".join(sorted(getattr(r, "methods", ["GET"])))
         logging.getLogger("uvicorn.error").info("ROUTE %s %s", methods, getattr(r, "path", ""))
-
+    try:
+        import transformers
+        logging.getLogger("uvicorn.error").info(f"Transformers version: {transformers.__version__}")
+    except Exception as e:
+        logging.getLogger("uvicorn.error").warning(f"Transformers import failed: {e}")
     if os.getenv("USE_HEAVY","0") == "1":
         try:
             heavy = importlib.import_module("backend.services.heavy_audiogen")
             getattr(heavy, "_load_model")()
             logging.getLogger("uvicorn.error").info("✅ Heavy model loaded")
         except Exception as e:
-            if os.getenv("ALLOW_FALLBACK","0") != "1":
-                logging.getLogger("uvicorn.error").error(f"❌ Heavy preflight failed (no fallback): {e}")
-                raise
-            logging.getLogger("uvicorn.error").warning(f"⚠️ Heavy preflight failed, ALLOW_FALLBACK=1: {e}")
+            logging.getLogger("uvicorn.error").warning(f"⚠️ Heavy preload failed: {e}")
+            # do NOT raise; server must stay up
