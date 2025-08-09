@@ -38,7 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Backend code + deps
 COPY backend /app/backend
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements-heavy.txt
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    -r /app/backend/requirements-heavy.txt
 
 # Frontend static (if built)
 RUN mkdir -p /app/frontend/dist
