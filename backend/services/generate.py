@@ -51,9 +51,9 @@ def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int
             if not ALLOW_FALLBACK:
                 raise RuntimeError(f"Heavy generation failed; fallback disabled: {e}")
             print(f"[generator] heavy failed, using procedural fallback: {e}")
-            audio = _procedural(prompt, duration); generator = "procedural"
+            audio = _procedural(prompt, duration); generator = "fallback"
     else:
-        audio = _procedural(prompt, duration); generator = "procedural"
+        audio = _procedural(prompt, duration); generator = "fallback"
 
     out_path = output_dir / f"{uuid.uuid4()}.wav"
     sf.write(out_path, audio, sample_rate, subtype="PCM_16")

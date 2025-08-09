@@ -13,45 +13,20 @@ WORKDIR /app
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv build-essential libsndfile1 ffmpeg curl git ca-certificates \
+    python3 python3-pip python3-venv build-essential libsndfile1 ffmpeg curl git ca-certificates nodejs npm \
  && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip \
  && rm -rf /var/lib/apt/lists/*
 
 # Backend code
 COPY backend /app/backend
 
-# Install base reqs (must NOT include transformers/tokenizers/sentencepiece)
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+# Frontend code
+COPY frontend /app/frontend
 
-# Install heavy reqs with CUDA wheels index
-RUN pip install --no-cache-dir \
-    --extra-index-url https://download.pytorch.org/whl/cu121 \
-    -r /app/backend/requirements-heavy.txt
-
-# Print versions at build time (debug)
-RUN python - <<'PY'
-import sys
-
-def safe(ver): 
-    try: return ver
-    except: return None
-try:
-    import torch, torchaudio, transformers, tokenizers, sentencepiece, audiocraft, huggingface_hub, safetensors
-    print(">>> torch", torch.__version__, "cuda:", getattr(torch.version,'cuda',None), "cuda_ok:", torch.cuda.is_available())
-    print(">>> torchaudio", torchaudio.__version__)
-    print(">>> transformers", transformers.__version__)
-    print(">>> tokenizers", tokenizers.__version__)
-    print(">>> sentencepiece", getattr(sentencepiece,'__version__', 'ok'))
-    import importlib.metadata as md
-    print(">>> audiocraft", md.version('audiocraft'))
-    print(">>> huggingface-hub", huggingface_hub.__version__)
-    print(">>> safetensors", safetensors.__version__)
-except Exception as e:
-    print("IMPORT CHECK FAILED:", e, file=sys.stderr)
-PY
-
-# Optional: include built frontend if your repo has it (no-op if not present)
-RUN mkdir -p /app/frontend/dist
+RUN python -m pip install --upgrade pip \
+ && pip install --no-cache-dir -r backend/requirements.txt \
+ && pip install --no-cache-dir -r backend/requirements-heavy.txt \
+ && cd frontend && npm ci && npm run build && rm -rf node_modules
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
