@@ -7,7 +7,14 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from backend.models.schemas import GenerateAudioRequest
 from backend.services.generate import generate_file
-from backend.services import heavy_audiogen
+# heavy AudioGen support is optional; avoid hard import at module load
+try:
+    from backend.services import heavy_audiogen  # type: ignore
+except Exception as e:
+    heavy_audiogen = None  # type: ignore
+    _HEAVY_IMPORT_ERROR = str(e)
+else:
+    _HEAVY_IMPORT_ERROR = None
 
 router = APIRouter()
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +39,9 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
                 "path": str(out_path),
                 "elapsed_ms": elapsed,
                 "generator": generator,
-                "heavy_error": heavy_audiogen.last_error(),
+                "heavy_error": (
+                    heavy_audiogen.last_error() if heavy_audiogen else _HEAVY_IMPORT_ERROR
+                ),
             },
             headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator},
         )
