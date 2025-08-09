@@ -71,7 +71,8 @@ jobs:
         if: ${{ steps.docker_login.outcome == 'success' }}
         run: |
           set -euxo pipefail
-          docker run -d --rm --name test-container -p 8000:8000 \
+          docker run -d --name test-container -p 8000:8000 \
+            -e USE_HEAVY=0 \
             ${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:latest
           # wait up to 40s
           for i in $(seq 1 40); do
