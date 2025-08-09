@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 import os, sys, platform, importlib
+from backend.services.generate import _detect_heavy_capable
 
 router = APIRouter()
 app = None  # will be injected by main
@@ -37,7 +38,8 @@ def version():
         "cuda_available": cuda_ok,
         "cuda_version": cuda_ver,
         "device_name": dev,
-        "last_heavy_error": last
+        "last_heavy_error": last,
+        "detected_heavy_capable": _detect_heavy_capable()
     })
 
 @router.get("/debug/state", tags=["debug"])
