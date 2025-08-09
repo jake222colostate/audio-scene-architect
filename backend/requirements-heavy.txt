@@ -1,9 +1,9 @@
-# Torch/Torchaudio built for CUDA 12.1 (match our CUDA base)
+# Torch/Torchaudio for CUDA 12.1 (matches our CUDA base image)
 torch==2.1.0+cu121
 torchaudio==2.1.0+cu121
 --extra-index-url https://download.pytorch.org/whl/cu121
 
-# AudioCraft + compatible HF stack
+# AudioCraft + compatible Hugging Face stack (fixes T5EncoderModel import)
 audiocraft==1.3.0
 transformers==4.38.2
 tokenizers==0.15.2
