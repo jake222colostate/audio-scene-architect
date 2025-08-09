@@ -11,12 +11,12 @@ COPY backend /app/backend
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 # Heavy deps must match CUDA version (here cu121)
 RUN pip install --no-cache-dir -r /app/backend/requirements-heavy.txt
+COPY docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
   CMD curl -fsS http://127.0.0.1:8000/api/health >/dev/null || exit 1
 
 ENV USE_HEAVY=1
-# Optional: choose a different model size via env
-# ENV AUDIOGEN_MODEL=facebook/audiogen-large
-CMD ["python","-m","uvicorn","backend.main:app","--host","0.0.0.0","--port","8000","--log-level","info"]
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

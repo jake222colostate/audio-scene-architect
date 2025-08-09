@@ -4,7 +4,9 @@ from typing import Optional, Union
 
 class GenerateAudioRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=500)
-    duration: Union[int, str] = Field(..., description="Seconds, 1–120")
+    duration: Union[int, str] = Field(
+        ..., description="Seconds, 1–30 heavy, 1–120 fallback"
+    )
     seed: Optional[Union[int, str]] = None
     sample_rate: Optional[Union[int, str]] = 44100
 

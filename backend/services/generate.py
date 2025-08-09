@@ -41,7 +41,6 @@ def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int
         except Exception as e:
             # Log heavy failure; optionally hard-fail if FORCE_HEAVY=1
             print(f"[generator] heavy failed, falling back: {e}")
-            from backend.services.heavy_audiogen import last_error
             if FORCE_HEAVY:
                 raise
             audio = _procedural(prompt, duration)
