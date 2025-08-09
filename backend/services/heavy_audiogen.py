@@ -1,13 +1,22 @@
 import os
-import torch
-import numpy as np
 from typing import Optional
-from audiocraft.models import AudioGen
-import torchaudio
+import numpy as np
+
+# Heavy dependencies are optional; import lazily and allow graceful fallback
+try:  # pragma: no cover - best effort import
+    import torch  # type: ignore
+    from audiocraft.models import AudioGen  # type: ignore
+    import torchaudio  # type: ignore
+    _IMPORT_ERROR = None
+except Exception as e:  # pragma: no cover - handled at runtime
+    torch = None  # type: ignore
+    AudioGen = None  # type: ignore
+    torchaudio = None  # type: ignore
+    _IMPORT_ERROR = e
 
 # Singletons
 _MODEL = None
-_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+_DEVICE = "cuda" if torch and torch.cuda.is_available() else "cpu"
 _DEFAULT_MODEL = os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium")
 _LAST_ERROR = None
 
@@ -15,12 +24,15 @@ def last_error() -> Optional[str]:
     return _LAST_ERROR
 
 def is_available() -> bool:
-    return _DEVICE == "cuda"
+    return torch is not None and _DEVICE == "cuda"
 
 def _load_model() -> AudioGen:
     global _MODEL, _LAST_ERROR
     if _MODEL is not None:
         return _MODEL
+    if torch is None or AudioGen is None or torchaudio is None:
+        _LAST_ERROR = f"Heavy dependencies missing: {_IMPORT_ERROR}"
+        raise RuntimeError(_LAST_ERROR)
     if not is_available():
         _LAST_ERROR = "CUDA not available"
         raise RuntimeError(_LAST_ERROR)
