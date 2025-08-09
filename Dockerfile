@@ -1,32 +1,50 @@
 # syntax=docker/dockerfile:1.6
-
 # ---- Frontend build (optional) ----
 FROM node:20-slim AS frontend
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 WORKDIR /app/frontend
-# Always copy the directory, even if it only has .gitkeep
-COPY frontend/ ./
-# If there's a package.json, then build; otherwise skip.
-RUN if [ -f package.json ]; then npm ci && npm run build; else echo "No frontend package.json; skipping SPA build."; fi
+COPY frontend/ ./ || true
+RUN if [[ -f package.json ]]; then \
+      echo ">>> [frontend] npm ci"; npm ci; \
+      echo ">>> [frontend] npm run build"; npm run build; \
+    else \
+      echo ">>> [frontend] No package.json; skipping build"; \
+    fi
 
 # ---- Backend runtime ----
 FROM python:3.11-slim AS runtime
+SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
-# System deps for audio + curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libsndfile1 ffmpeg curl && \
+# System deps
+RUN echo ">>> [runtime] apt-get install deps" && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      build-essential libsndfile1 ffmpeg curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Backend code & deps
 COPY backend /app/backend
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN echo ">>> [runtime] pip install (requirements.txt)" && \
+    pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# Copy built SPA **only if it exists**
+# Build-time Python sanity checks (CPU image)
+RUN echo ">>> [runtime] Python sanity checks" && python - <<'PY'
+import sys, importlib
+print("python:", sys.version)
+for m in ["fastapi","uvicorn","numpy","soundfile"]:
+    try:
+        importlib.import_module(m)
+        print("ok import:", m)
+    except Exception as e:
+        print("FAIL import:", m, "->", e); raise
+PY
+
+# Copy SPA if built
 RUN mkdir -p /app/frontend/dist
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
-# Optional: entrypoint with preflight (keeps logs if boot fails)
+# Entrypoint
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 
