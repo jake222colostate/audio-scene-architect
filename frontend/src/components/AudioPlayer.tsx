@@ -127,7 +127,7 @@ export const AudioPlayer = ({ audioUrl, filename, isLoading, generator, heavyErr
       )}
 
       {generator && (
-        <p className="text-xs text-muted-foreground">Generator: {generator === 'heavy' ? 'AI' : 'Fallback'}</p>
+        <p className="text-xs text-muted-foreground">Generator: {generator === 'heavy' ? 'AI (AudioGen)' : 'Fallback'}</p>
       )}
       {heavyError && (
         <p className="text-[10px] text-muted-foreground opacity-70">{heavyError}</p>
