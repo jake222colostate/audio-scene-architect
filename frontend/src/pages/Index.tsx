@@ -4,6 +4,7 @@ import { AudioPlayer } from '@/components/AudioPlayer';
 import { ConsolePanel } from '@/components/ConsolePanel';
 import soundforgeLogo from '@/assets/soundforge-logo.png';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -80,6 +81,24 @@ const Index = () => {
       setError(null);
       setErrorMsg("");
       await handleGenerateAudio(lastFailedRequest.prompt, lastFailedRequest.duration);
+    }
+  };
+
+  const runSelfTest = async () => {
+    logLine('🧪 Running self-test AI...');
+    try {
+      const res = await fetch(`${API_BASE}/api/debug/selftest`, { method: 'POST' });
+      const j = await res.json();
+      if (j.ok) {
+        logLine(`✅ Self-test passed (generator: ${j.generator})`);
+        toast({ title: 'Self-test OK', description: `Generator: ${j.generator}` });
+      } else {
+        logLine(`❌ Self-test failed: ${j.error}`);
+        toast({ title: 'Self-test failed', description: j.error, variant: 'destructive' });
+      }
+    } catch (err) {
+      logLine(`❌ Self-test error: ${err}`);
+      toast({ title: 'Self-test error', description: String(err), variant: 'destructive' });
     }
   };
 
@@ -209,20 +228,27 @@ const Index = () => {
       logLine(`❌ Frontend error: ${errorMessage}`, 'ERROR');
       logLine(`🔄 You can retry by clicking the "Retry" button below`, 'INFO');
 
-      setErrorMsg(`❌ ${errorMessage}`);
+      const heavyFailed = errorMessage.toLowerCase().includes("heavy generation failed");
+      const userMsg = heavyFailed ? `${errorMessage} Try a GPU-enabled pod or enable ALLOW_FALLBACK=1.` : errorMessage;
+
+      setErrorMsg(`❌ ${userMsg}`);
       setLastFailedRequest({ prompt, duration });
 
       if (typeof err === 'string' || !err || typeof err !== 'object' || !('error' in err)) {
         setError({
-          error: errorMessage,
+          error: userMsg,
           trace: '',
           status: 0
         });
       }
 
+      if (heavyFailed) {
+        setHeavyError(errorMessage);
+      }
+
       toast({
         title: "Generation Failed",
-        description: errorMessage,
+        description: userMsg,
         variant: "destructive",
       });
     } finally {
@@ -236,7 +262,7 @@ const Index = () => {
     <div className="min-h-screen bg-gradient-background">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
+        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <img src={soundforgeLogo} alt="SoundForge.AI" className="h-10 w-auto" />
             <div>
@@ -244,6 +270,7 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Cinematic Audio Generation</p>
             </div>
           </div>
+          <Button variant="outline" size="sm" onClick={runSelfTest}>Self-test AI</Button>
         </div>
       </header>
 
