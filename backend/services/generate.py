@@ -10,9 +10,9 @@ def _detect_heavy_capable() -> bool:
     except Exception:
         return False
 
-_use_heavy_env = os.getenv("USE_HEAVY")
-if _use_heavy_env in ("0", "1"):
-    USE_HEAVY = (_use_heavy_env == "1")
+_uhe = os.getenv("USE_HEAVY")
+if _uhe in ("0", "1"):
+    USE_HEAVY = (_uhe == "1")
 else:
     USE_HEAVY = _detect_heavy_capable()
 
@@ -49,7 +49,6 @@ def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int
         except Exception as e:
             if not ALLOW_FALLBACK:
                 raise RuntimeError(f"Heavy generation failed; fallback disabled: {e}")
-            print(f"[generator] heavy failed, using procedural fallback: {e}")
             audio = _procedural(prompt, duration); generator = "procedural"
     else:
         audio = _procedural(prompt, duration); generator = "procedural"
