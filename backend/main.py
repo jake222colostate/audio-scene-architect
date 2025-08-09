@@ -45,33 +45,74 @@ def root_health():
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+async def _heavy_preflight():
+    if os.getenv("USE_HEAVY", "0") == "1":
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA not available (torch.cuda.is_available() == False)")
+            from backend.services.heavy_audiogen import _load_model
+            _ = _load_model()
+        except Exception as e:
+            if os.getenv("ALLOW_FALLBACK", "0") != "1":
+                raise
+            else:
+                logging.getLogger("uvicorn.error").warning(
+                    f"Heavy preflight failed, but ALLOW_FALLBACK=1: {e}"
+                )
+
 @app.get("/api/version", tags=["meta"])
 def version():
     import os
-    heavy_env = os.getenv("USE_HEAVY","0") == "1"
+    rv = {
+        "use_heavy_env": os.getenv("USE_HEAVY", "0"),
+        "allow_fallback": os.getenv("ALLOW_FALLBACK", ""),
+        "audiogen_model": os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium"),
+    }
     try:
         import torch
-        cuda_ok = torch.cuda.is_available()
-        cuda_ver = getattr(torch.version, "cuda", None)
-    except Exception:
-        cuda_ok, cuda_ver = False, None
+        rv.update(
+            cuda_available=torch.cuda.is_available(),
+            cuda_version=getattr(torch.version, "cuda", None),
+            device_name=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        )
+    except Exception as e:
+        rv.update(cuda_error=str(e))
     try:
         from backend.services.heavy_audiogen import last_error
-        last = last_error()
-    except Exception:
-        last = None
-    return {"use_heavy_env": heavy_env, "cuda_available": cuda_ok, "cuda_version": cuda_ver, "last_heavy_error": last}
+        rv.update(last_heavy_error=last_error())
+    except Exception as e:
+        rv.update(heavy_diag_error=str(e))
+    return rv
 
 
 @app.get("/api/debug/generator", tags=["meta"])
 def debug_generator():
-    from backend.services import heavy_audiogen
-    return {
-        "device": "cuda" if __import__("torch").cuda.is_available() else "cpu",
-        "model": os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium"),
-        "heavy_available": heavy_audiogen.is_available(),
-        "last_heavy_error": heavy_audiogen.last_error(),
-    }
+    out = {}
+    try:
+        from backend.services import heavy_audiogen
+        out["heavy_available"] = heavy_audiogen.is_available()
+        out["last_heavy_error"] = heavy_audiogen.last_error()
+    except Exception as e:
+        out["import_error"] = str(e)
+    return out
+
+
+@app.post("/api/debug/selftest", tags=["meta"])
+def selftest():
+    import tempfile, os
+    from pathlib import Path
+    prompt = (
+        "leaves crunching under footsteps while walking, outdoors, close perspective, dry leaves"
+    )
+    try:
+        from backend.services.heavy_audiogen import generate_wav
+
+        wav = generate_wav(prompt, seconds=2, sample_rate=22050, seed=42)
+        return {"ok": True, "generator": "heavy", "len": int(len(wav)), "sr": 22050}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 # Routers (must be prefix-free inside files)
 app.include_router(health_router)                 # -> /health

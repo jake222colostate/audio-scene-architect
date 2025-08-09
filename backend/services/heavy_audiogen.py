@@ -30,6 +30,7 @@ def _load_model() -> AudioGen:
     global _MODEL, _LAST_ERROR
     if _MODEL is not None:
         return _MODEL
+    _LAST_ERROR = None
     if torch is None or AudioGen is None or torchaudio is None:
         _LAST_ERROR = f"Heavy dependencies missing: {_IMPORT_ERROR}"
         raise RuntimeError(_LAST_ERROR)
@@ -38,7 +39,6 @@ def _load_model() -> AudioGen:
         raise RuntimeError(_LAST_ERROR)
     try:
         _MODEL = AudioGen.get_pretrained(_DEFAULT_MODEL).to(_DEVICE)
-        # Set defaults; will be overridden per-call
         _MODEL.set_generation_params(duration=5, use_sampling=True, top_k=250, top_p=0.0,
                                      temperature=1.0, cfg_coef=3.5)
         return _MODEL
@@ -76,16 +76,15 @@ def generate_wav(
 
     try:
         wavs = model.generate([prompt])  # returns list[Tensor]
+        wav = wavs[0].detach().cpu()  # [T] or [C,T]
+        if wav.ndim > 1:
+            wav = wav.mean(0)
+
+        model_sr = 32000
+        if sample_rate != model_sr:
+            wav = torchaudio.functional.resample(wav, orig_freq=model_sr, new_freq=sample_rate)
+
+        return torch.clamp(wav, -1.0, 1.0).float().numpy()
     except Exception as e:
-        _LAST_ERROR = f"Model.generate failed: {e}"
+        _LAST_ERROR = f"Generation failed: {e}"
         raise
-
-    wav = wavs[0].detach().cpu()  # [T] or [C,T]
-    if wav.ndim > 1:
-        wav = wav.mean(0)
-
-    model_sr = 32000
-    if sample_rate != model_sr:
-        wav = torchaudio.functional.resample(wav, orig_freq=model_sr, new_freq=sample_rate)
-
-    return torch.clamp(wav, -1.0, 1.0).float().numpy()
