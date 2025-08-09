@@ -1,19 +1,7 @@
 .git
-node_modules
 **/node_modules
 frontend/.cache
-**/.cache
-# Do NOT ignore source frontend; keep it in context
-# !frontend/**   # (uncomment if you previously ignored it by mistake)
 __pycache__
-**/__pycache__
 *.pyc
-*.pyo
-*.pyd
-*.swp
-.env
-.venv
-venv
-frontend/node_modules
-backend/output_audio
 dist
+

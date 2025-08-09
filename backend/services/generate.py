@@ -2,7 +2,20 @@ import os, uuid, importlib
 import numpy as np, soundfile as sf
 from pathlib import Path
 
-USE_HEAVY = os.getenv("USE_HEAVY", "0") == "1"
+def _detect_heavy_capable() -> bool:
+    try:
+        import torch
+        from audiocraft.models import AudioGen
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+_use_heavy_env = os.getenv("USE_HEAVY")
+if _use_heavy_env in ("0", "1"):
+    USE_HEAVY = (_use_heavy_env == "1")
+else:
+    USE_HEAVY = _detect_heavy_capable()
+
 ALLOW_FALLBACK = (os.getenv("ALLOW_FALLBACK", "").strip() == "1") if USE_HEAVY else True
 SAMPLE_RATE = 44100
 
