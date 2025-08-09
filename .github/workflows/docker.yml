@@ -70,22 +70,30 @@ jobs:
       - name: Smoke run + health (CPU)
         if: ${{ steps.docker_login.outcome == 'success' }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           docker run -d --name test-container -p 8000:8000 \
             -e USE_HEAVY=0 \
             ${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:latest
-          # wait up to 40s
+
+          echo "=== Wait for health ==="
           for i in $(seq 1 40); do
-            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
-              echo "Health OK on attempt $i"; break
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 || \
+               curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              echo "Health OK"; break
             fi
-            echo "Health not ready (attempt $i)"; sleep 1
+            sleep 1
           done
-          if ! curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
-            echo ">>> Container logs (last 400 lines):"
+
+          if ! (curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 || \
+                curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1); then
+            echo "Health failed; dumping /api/debug/routes (if present):"
+            curl -fsS http://127.0.0.1:8000/api/debug/routes || true
+            echo "Dumping /docs (first 2000 chars):"
+            curl -fsS http://127.0.0.1:8000/docs | head -c 2000 || true
             docker logs --timestamps test-container | tail -n 400 || true
+            docker rm -f test-container || true
             exit 1
           fi
-          # Show routes
-          curl -fsS http://127.0.0.1:8000/api/_debug/routes | jq || true
+
+          curl -fsS http://127.0.0.1:8000/api/debug/routes | jq || true
           docker rm -f test-container || true

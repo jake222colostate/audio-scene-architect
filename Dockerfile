@@ -57,7 +57,7 @@ COPY --from=frontend /app/frontend/dist /app/frontend/dist
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
-  CMD curl -fsS http://127.0.0.1:8000/api/health >/dev/null || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
+  CMD sh -c 'curl -fsS http://127.0.0.1:8000/health >/dev/null || curl -fsS http://127.0.0.1:8000/api/health >/dev/null'
 ENV UVICORN_HOST=0.0.0.0 UVICORN_PORT=8000 UVICORN_LOG_LEVEL=info APP_MODULE=backend.main:app
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
