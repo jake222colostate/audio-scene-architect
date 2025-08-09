@@ -45,20 +45,32 @@ def root_health():
     return {"status": "ok"}
 
 
-@app.get("/api/version")
+@app.get("/api/version", tags=["meta"])
 def version():
     import os
+    heavy_env = os.getenv("USE_HEAVY","0") == "1"
     try:
         import torch
-
         cuda_ok = torch.cuda.is_available()
-        cuda = torch.version.cuda if cuda_ok else None
+        cuda_ver = getattr(torch.version, "cuda", None)
     except Exception:
-        cuda_ok, cuda = False, None
+        cuda_ok, cuda_ver = False, None
+    try:
+        from backend.services.heavy_audiogen import last_error
+        last = last_error()
+    except Exception:
+        last = None
+    return {"use_heavy_env": heavy_env, "cuda_available": cuda_ok, "cuda_version": cuda_ver, "last_heavy_error": last}
+
+
+@app.get("/api/debug/generator", tags=["meta"])
+def debug_generator():
+    from backend.services import heavy_audiogen
     return {
-        "use_heavy_env": os.getenv("USE_HEAVY", "0"),
-        "cuda_available": cuda_ok,
-        "cuda_version": cuda,
+        "device": "cuda" if __import__("torch").cuda.is_available() else "cpu",
+        "model": os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium"),
+        "heavy_available": heavy_audiogen.is_available(),
+        "last_heavy_error": heavy_audiogen.last_error(),
     }
 
 # Routers (must be prefix-free inside files)

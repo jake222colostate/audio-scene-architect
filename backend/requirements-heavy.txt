@@ -1,9 +1,4 @@
-# Heavy dependencies for optional GPU image. Installed only when
-# building the CUDA-enabled container. Versions pinned for CUDA 12.1
-# (common on RunPod). Swap the "+cu121" suffix and extra index if
-# targeting a different CUDA version.
-
-# CUDA 12.1 wheels
+# Choose CUDA 12.1 wheels (common on RunPod CUDA 12.x images). Change if your base differs.
 torch==2.3.1+cu121
 torchaudio==2.3.1+cu121
 --extra-index-url https://download.pytorch.org/whl/cu121
