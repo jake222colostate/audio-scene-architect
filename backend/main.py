@@ -32,20 +32,20 @@ else:
 
 # Preload model if requested
 @app.on_event("startup")
-async def _heavy_preflight():
-    if os.getenv("USE_HEAVY","0") == "1":
+async def heavy_preflight():
+    import os, importlib, logging
+    if os.getenv("USE_HEAVY", "0") == "1":
         try:
-            import torch
-            if not torch.cuda.is_available():
-                raise RuntimeError("CUDA not available")
-            from backend.services.heavy_audiogen import _load_model
-            _load_model()
+            heavy = importlib.import_module("backend.services.heavy_audiogen")
+            # will raise if CUDA/torch missing
+            getattr(heavy, "_load_model")()
             logging.getLogger("uvicorn.error").info("✅ Heavy model loaded")
         except Exception as e:
-            if os.getenv("ALLOW_FALLBACK","0") != "1":
-                logging.getLogger("uvicorn.error").error(f"❌ Heavy preflight failed (no fallback): {e}")
+            if os.getenv("ALLOW_FALLBACK", "0") != "1":
                 raise
-            logging.getLogger("uvicorn.error").warning(f"⚠️ Heavy preflight failed, ALLOW_FALLBACK=1: {e}")
+            logging.getLogger("uvicorn.error").warning(
+                f"⚠️ Heavy preflight failed, ALLOW_FALLBACK=1: {e}"
+            )
 
 @app.get("/api/version", tags=["meta"])
 def version():
