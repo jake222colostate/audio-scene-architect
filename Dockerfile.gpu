@@ -1,35 +1,38 @@
-# syntax=docker/dockerfile:1.6
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
-SHELL ["/bin/bash","-euxo","pipefail","-c"]
+FROM python:3.10-slim
 
-ARG BUILD_TAG=dev
-ENV BUILD_TAG=${BUILD_TAG} \
-    DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    HF_HOME=/app/.cache/huggingface \
-    TRANSFORMERS_CACHE=/app/.cache/huggingface
-
-WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv build-essential libsndfile1 ffmpeg curl git ca-certificates nodejs npm \
- && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip \
- && rm -rf /var/lib/apt/lists/*
+    ffmpeg git curl build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# Backend code
-COPY backend /app/backend
+WORKDIR /app
 
-# Frontend code
-COPY frontend /app/frontend
+# Copy and install backend deps
+COPY backend/requirements.txt backend/requirements.txt
+COPY backend/requirements-heavy.txt backend/requirements-heavy.txt
 
-RUN python -m pip install --upgrade pip \
- && pip install --no-cache-dir -r backend/requirements.txt \
- && pip install --no-cache-dir -r backend/requirements-heavy.txt \
- && cd frontend && npm ci && npm run build && rm -rf node_modules
+RUN pip install --upgrade pip && \
+    pip install -r backend/requirements.txt && \
+    pip install -r backend/requirements-heavy.txt
 
+# Copy backend and frontend
+COPY backend/ backend/
+COPY frontend/ frontend/
+
+# Build frontend if present
+WORKDIR /app/frontend
+RUN npm ci && npm run build || true
+
+# Back to root; mount static /audio and serve frontend dist if app does that
+WORKDIR /app
+
+# Expose + healthcheck
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD sh -c 'curl -fsS http://127.0.0.1:8000/health >/dev/null || curl -fsS http://127.0.0.1:8000/api/health >/dev/null'
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
+  curl -fsS http://127.0.0.1:8000/health || curl -fsS http://127.0.0.1:8000/api/health || exit 1
 
+# Default command
 CMD ["python","-m","uvicorn","backend.main:app","--host","0.0.0.0","--port","8000","--log-level","info"]

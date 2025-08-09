@@ -1,25 +1,26 @@
 # Deploy to RunPod (GPU)
 
-1. **Image**
-   - Use the stamped tag printed by CI (e.g. `STAMPED_GPU_TAG`).
-   - Do **not** use the `:latest` tag.
+**Image**: use the printed `STAMPED_GPU_TAG` (not `:latest`).
 
-2. **Environment variables**
-   - `USE_HEAVY=1`
-   - `ALLOW_FALLBACK=1` *(set to `0` after the model loads successfully)*
-   - `PUBLIC_BASE_URL=https://<RUNPOD_ID>-8000.proxy.runpod.net`
-   - `HF_HOME=/app/.cache/huggingface`
-   - `TRANSFORMERS_CACHE=/app/.cache/huggingface`
-   - `AUDIO_OUT_DIR=/backend/output_audio`
-   - `BUILD_TAG=<stamped tag>`
+**Port**: `8000`
 
-3. **Port**
-   - Expose `8000`.
+**Env vars (set in RunPod):**
 
-4. **Restart policy**
-   - After changing image or env vars: **Stop** then **Start** the pod.
+```
+USE_HEAVY=1
+ALLOW_FALLBACK=1 # set to 0 after confirming heavy loads
+AUDIOGEN_MODEL=facebook/audiogen-medium
+PUBLIC_BASE_URL=https://<RUNPOD_ID>-8000.proxy.runpod.net
+AUDIO_OUT_DIR=/app/backend/output_audio
+HF_HOME=/app/.cache/huggingface
+TRANSFORMERS_CACHE=/app/.cache/huggingface
+BUILD_TAG=<paste stamped tag>
+IMAGE_TAG=<paste stamped tag>
+```
 
-5. **Verification**
-   - `GET /api/version` → `cuda_available:true`, correct `transformers`/`tokenizers` versions,
-     `use_heavy_env:"1"`, `last_heavy_error:null`.
-   - POST an 8–12s prompt to `/api/generate-audio` → response `generator:"heavy"` and audio plays.
+**Restart**: Stop → Start the pod after changing the image/env.
+
+**Verify:**
+
+- `GET /api/version` shows `cuda_available:true`, correct versions, `heavy_loaded:true`, `last_heavy_error:null`.
+- Generate an 8–12s prompt; JSON shows `"generator":"heavy"` and audio plays.
