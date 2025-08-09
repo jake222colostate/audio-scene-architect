@@ -28,9 +28,17 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         )
         base = os.getenv("PUBLIC_BASE_URL") or str(request.headers.get("X-Public-Base-Url") or "")
         rel = f"/audio/{out_path.stem}.wav"
-        url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
+        file_url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
         elapsed = int((time.time() - t0) * 1000)
-        resp = {"ok": True, "url": url, "path": str(out_path), "elapsed_ms": elapsed, "generator": generator}
+        resp = {
+            "ok": True,
+            "file_url": file_url,
+            "url": file_url,
+            "path": str(out_path),
+            "elapsed_ms": elapsed,
+            "duration": payload.duration,
+            "generator": generator,
+        }
         he = _heavy_error_safe()
         if he is not None:
             resp["heavy_error"] = he

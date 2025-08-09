@@ -1,35 +1,36 @@
-name: Build & Push GPU App
+name: Build & Push GPU Image
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
-    paths-ignore:
-      - backend/requirements.txt
-      - backend/requirements-heavy.txt
-      - Dockerfile.gpu.base
+    branches: [ "main" ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      DOCKER_BUILDKIT: 1
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with: { username: ${{ secrets.DOCKERHUB_USERNAME }}, password: ${{ secrets.DOCKERHUB_TOKEN }} }
-      - name: Compute tags
-        id: meta
+      - name: Set vars
+        id: vars
         run: |
-          echo "STAMP=$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          echo "REPO=jakeypoov/audio-scene-architect" >> $GITHUB_OUTPUT
-      - name: Build & push
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build & push GPU image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.gpu
+          push: true
+          tags: |
+            jakeypoov/audio-scene-architect:gpu
+            jakeypoov/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
+      - name: Print stamped tag
         run: |
-          docker build -f Dockerfile.gpu \
-            --build-arg BUILD_TAG=${{ steps.meta.outputs.STAMP }} \
-            -t ${{ steps.meta.outputs.REPO }}:gpu \
-            -t ${{ steps.meta.outputs.REPO }}:gpu-${{ steps.meta.outputs.STAMP }} .
-          docker push ${{ steps.meta.outputs.REPO }}:gpu
-          docker push ${{ steps.meta.outputs.REPO }}:gpu-${{ steps.meta.outputs.STAMP }}
-      - name: Print tag for RunPod
-        run: echo "Use this image: ${{ steps.meta.outputs.REPO }}:gpu-${{ steps.meta.outputs.STAMP }}"
-
+          echo "STAMPED_GPU_TAG=jakeypoov/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}"

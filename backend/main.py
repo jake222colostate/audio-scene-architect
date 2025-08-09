@@ -75,14 +75,22 @@ async def _log_routes_and_versions():
         methods = ",".join(sorted(getattr(r, "methods", ["GET"])))
         lg.info("ROUTE %s %s", methods, getattr(r, "path", ""))
     try:
-        import transformers, tokenizers
-        lg.info("HF stack: transformers=%s tokenizers=%s", transformers.__version__, tokenizers.__version__)
+        import torch, torchaudio, transformers, tokenizers
+        lg.info(
+            "VERSIONS torch=%s torchaudio=%s transformers=%s tokenizers=%s",
+            torch.__version__,
+            torchaudio.__version__,
+            transformers.__version__,
+            tokenizers.__version__,
+        )
     except Exception as e:
-        lg.warning("HF import failed: %s", e)
+        lg.warning("Version logging failed: %s", e)
     if os.getenv("USE_HEAVY","0") == "1":
         try:
             heavy = importlib.import_module("backend.services.heavy_audiogen")
             getattr(heavy, "_load_model")()
             lg.info("✅ Heavy model loaded")
+            meta_routes.last_heavy_error = None
         except Exception as e:
+            meta_routes.last_heavy_error = str(e)
             lg.warning("⚠️ Heavy preload failed: %s", e)

@@ -3,4 +3,6 @@ uvicorn[standard]>=0.29
 pydantic>=2.7
 numpy>=1.26
 soundfile>=0.12
+pydub>=0.25
+python-multipart>=0.0.6
 
