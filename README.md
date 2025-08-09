@@ -46,6 +46,27 @@ Test URLs:
 - `/docs`
 - `/`
 
+## GPU runbook
+
+Build & push GPU image:
+```bash
+docker build -f Dockerfile.gpu -t docker.io/<you>/audio-scene-architect:gpu .
+docker push docker.io/<you>/audio-scene-architect:gpu
+```
+
+RunPod (GPU pod) env:
+```
+USE_HEAVY=1
+ALLOW_FALLBACK=0
+AUDIOGEN_MODEL=facebook/audiogen-medium
+PUBLIC_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net
+```
+
+Smoke checks:
+- `GET /api/version` → "cuda_available" should be true with a device name and null "last_heavy_error".
+- `POST /api/selftest` → `{ "ok": true, "len": ..., "sr": 22050 }`.
+- `POST /api/generate-audio` with `{"prompt":"leaves crunching under footsteps while walking","duration":8}` → response includes `"generator":"heavy"`.
+
 ## Troubleshooting
 
 Quick checks for the audio generation endpoint:

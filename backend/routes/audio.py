@@ -1,4 +1,5 @@
-import os, time
+import os
+import time
 from urllib.parse import urljoin
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
@@ -24,11 +25,16 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         rel = f"/audio/{out_path.stem}.wav"
         url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
         elapsed = int((time.time() - t0) * 1000)
-        headers = {"X-Elapsed-Ms": str(elapsed), "X-Generator": generator}
         return JSONResponse(
-            {"ok": True, "url": url, "path": str(out_path), "elapsed_ms": elapsed,
-             "generator": generator, "heavy_used": generator == "heavy", "heavy_error": heavy_audiogen.last_error()},
-            headers=headers
+            {
+                "ok": True,
+                "url": url,
+                "path": str(out_path),
+                "elapsed_ms": elapsed,
+                "generator": generator,
+                "heavy_error": heavy_audiogen.last_error(),
+            },
+            headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator},
         )
     except ValidationError as ve:
         raise HTTPException(status_code=422, detail=ve.errors())
@@ -36,3 +42,4 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

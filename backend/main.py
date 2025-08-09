@@ -33,7 +33,6 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
-)
 
 # Direct health endpoints (cannot disappear due to router mistakes)
 @app.get("/api/health", tags=["health"])
@@ -46,71 +45,52 @@ def root_health():
 
 
 @app.on_event("startup")
-async def _heavy_preflight():
-    if os.getenv("USE_HEAVY", "0") == "1":
+async def heavy_preflight():
+    if os.getenv("USE_HEAVY","0") == "1":
         try:
             import torch
             if not torch.cuda.is_available():
-                raise RuntimeError("CUDA not available (torch.cuda.is_available() == False)")
+                raise RuntimeError("CUDA not available")
             from backend.services.heavy_audiogen import _load_model
-            _ = _load_model()
+            _load_model()
+            logging.getLogger("uvicorn.error").info("✅ Heavy model loaded")
         except Exception as e:
-            if os.getenv("ALLOW_FALLBACK", "0") != "1":
+            if os.getenv("ALLOW_FALLBACK","0") != "1":
+                logging.getLogger("uvicorn.error").error(f"❌ Heavy preflight failed (no fallback): {e}")
                 raise
-            else:
-                logging.getLogger("uvicorn.error").warning(
-                    f"Heavy preflight failed, but ALLOW_FALLBACK=1: {e}"
-                )
+            logging.getLogger("uvicorn.error").warning(f"⚠️ Heavy preflight failed, ALLOW_FALLBACK=1: {e}")
 
 @app.get("/api/version", tags=["meta"])
 def version():
-    import os
-    rv = {
-        "use_heavy_env": os.getenv("USE_HEAVY", "0"),
-        "allow_fallback": os.getenv("ALLOW_FALLBACK", ""),
-        "audiogen_model": os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium"),
-    }
     try:
         import torch
-        rv.update(
-            cuda_available=torch.cuda.is_available(),
-            cuda_version=getattr(torch.version, "cuda", None),
-            device_name=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        )
+        cuda_ok = torch.cuda.is_available()
+        cuda_ver = getattr(torch.version, "cuda", None)
+        dev = torch.cuda.get_device_name(0) if cuda_ok else None
     except Exception as e:
-        rv.update(cuda_error=str(e))
+        cuda_ok, cuda_ver, dev = False, None, str(e)
     try:
         from backend.services.heavy_audiogen import last_error
-        rv.update(last_heavy_error=last_error())
+        last = last_error()
     except Exception as e:
-        rv.update(heavy_diag_error=str(e))
-    return rv
+        last = str(e)
+    return {
+        "use_heavy_env": os.getenv("USE_HEAVY","0"),
+        "allow_fallback": os.getenv("ALLOW_FALLBACK",""),
+        "audiogen_model": os.getenv("AUDIOGEN_MODEL","facebook/audiogen-medium"),
+        "cuda_available": cuda_ok,
+        "cuda_version": cuda_ver,
+        "device_name": dev,
+        "last_heavy_error": last
+    }
 
-
-@app.get("/api/debug/generator", tags=["meta"])
-def debug_generator():
-    out = {}
-    try:
-        from backend.services import heavy_audiogen
-        out["heavy_available"] = heavy_audiogen.is_available()
-        out["last_heavy_error"] = heavy_audiogen.last_error()
-    except Exception as e:
-        out["import_error"] = str(e)
-    return out
-
-
-@app.post("/api/debug/selftest", tags=["meta"])
+@app.post("/api/selftest", tags=["meta"])
 def selftest():
-    import tempfile, os
-    from pathlib import Path
-    prompt = (
-        "leaves crunching under footsteps while walking, outdoors, close perspective, dry leaves"
-    )
     try:
         from backend.services.heavy_audiogen import generate_wav
-
-        wav = generate_wav(prompt, seconds=2, sample_rate=22050, seed=42)
-        return {"ok": True, "generator": "heavy", "len": int(len(wav)), "sr": 22050}
+        wav = generate_wav("leaves crunching under footsteps while walking, outdoors, dry leaves, close perspective",
+                           seconds=2, sample_rate=22050, seed=42)
+        return {"ok": True, "len": int(len(wav)), "sr": 22050}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -125,18 +105,10 @@ app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 # Serve SPA at root if present; otherwise friendly landing page
 if FRONTEND_DIST.exists() and (FRONTEND_DIST / "index.html").exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
-    logging.getLogger("uvicorn.error").info(f"🌐 Serving SPA from {FRONTEND_DIST}")
 else:
     @app.get("/", include_in_schema=False)
     def landing():
-        return HTMLResponse(
-            "<!doctype html><meta charset='utf-8'>"
-            "<title>SoundForge.AI</title>"
-            "<h1>SoundForge.AI backend is running</h1>"
-            "<p>No SPA build found at <code>/app/frontend/dist</code>. "
-            "Visit <a href='/docs'>/docs</a> or POST to <code>/api/generate-audio</code>.</p>"
-        )
-    logging.getLogger("uvicorn.error").warning("⚠️ SPA not found; serving minimal landing page at '/'")
+        return HTMLResponse("<h1>SoundForge.AI backend is running</h1><p>No SPA build found. See <a href='/docs'>/docs</a>.</p>")
 
 # Timing + request id headers
 @app.middleware("http")
