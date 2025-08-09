@@ -21,24 +21,15 @@ jobs:
         id: meta
         run: |
           echo "STAMP=$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "REPO=jakeypoov/audio-scene-architect" >> $GITHUB_OUTPUT
       - name: Build & push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.gpu
-          push: true
-          tags: |
-            jakeypoov/audio-scene-architect:gpu
-            jakeypoov/audio-scene-architect:gpu-${{ steps.meta.outputs.STAMP }}
-          cache-from: |
-            type=registry,ref=jakeypoov/audio-scene-architect:buildcache-gpu
-            type=registry,ref=jakeypoov/audio-scene-architect:gpu-base
-          cache-to: type=registry,ref=jakeypoov/audio-scene-architect:buildcache-gpu,mode=max
-          platforms: linux/amd64
-          build-args: |
-            BASE_IMAGE=jakeypoov/audio-scene-architect:gpu-base
-            BUILD_TAG=${{ steps.meta.outputs.STAMP }}
-          provenance: false
-      - name: Print tag
-        run: echo "Use this image: jakeypoov/audio-scene-architect:gpu-${{ steps.meta.outputs.STAMP }}"
+        run: |
+          docker build -f Dockerfile.gpu \
+            --build-arg BUILD_TAG=${{ steps.meta.outputs.STAMP }} \
+            -t ${{ steps.meta.outputs.REPO }}:gpu \
+            -t ${{ steps.meta.outputs.REPO }}:gpu-${{ steps.meta.outputs.STAMP }} .
+          docker push ${{ steps.meta.outputs.REPO }}:gpu
+          docker push ${{ steps.meta.outputs.REPO }}:gpu-${{ steps.meta.outputs.STAMP }}
+      - name: Print tag for RunPod
+        run: echo "Use this image: ${{ steps.meta.outputs.REPO }}:gpu-${{ steps.meta.outputs.STAMP }}"
 

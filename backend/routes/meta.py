@@ -22,6 +22,13 @@ def version():
         pass
 
     last = None
+    tf_ver = tok_ver = None
+    try:
+        import transformers, tokenizers
+        tf_ver = transformers.__version__
+        tok_ver = tokenizers.__version__
+    except Exception:
+        pass
     try:
         heavy = importlib.import_module("backend.services.heavy_audiogen")
         last = getattr(heavy, "last_error")()
@@ -39,7 +46,9 @@ def version():
         "cuda_version": cuda_ver,
         "device_name": dev,
         "last_heavy_error": last,
-        "detected_heavy_capable": _detect_heavy_capable()
+        "detected_heavy_capable": _detect_heavy_capable(),
+        "transformers_version": tf_ver,
+        "tokenizers_version": tok_ver
     })
 
 @router.get("/debug/state", tags=["debug"])

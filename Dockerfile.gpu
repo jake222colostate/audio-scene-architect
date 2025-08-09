@@ -22,6 +22,10 @@ WORKDIR /app
 # Copy backend source last so small changes don’t bust earlier layers
 COPY backend /app/backend
 
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    -r /app/backend/requirements-heavy.txt
+
 # Copy built frontend (if any)
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
