@@ -1,4 +1,4 @@
-import os, logging, uuid, time
+import os, logging, uuid, time, sys, platform, pkgutil, importlib, json
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,12 @@ FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="SoundForge.AI", version="0.1.0")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
+    stream=sys.stdout,
+)
 
 
 @app.exception_handler(RequestValidationError)
@@ -33,6 +39,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
+)
 
 # Direct health endpoints (cannot disappear due to router mistakes)
 @app.get("/api/health", tags=["health"])
@@ -94,6 +101,52 @@ def selftest():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+# Debug endpoints
+@app.get("/api/_debug/env", tags=["debug"])
+def debug_env():
+    return {
+        "python": sys.version,
+        "platform": platform.platform(),
+        "env": {k: os.environ.get(k) for k in [
+            "USE_HEAVY","ALLOW_FALLBACK","AUDIOGEN_MODEL","HF_HOME","TRANSFORMERS_CACHE","CUDA_VISIBLE_DEVICES"
+        ]},
+        "cwd": os.getcwd(),
+        "paths": sys.path[:10],
+    }
+
+@app.get("/api/_debug/routes", tags=["debug"])
+def debug_routes():
+    routes = []
+    for r in app.router.routes:
+        methods = sorted(getattr(r, "methods", ["GET"]))
+        routes.append({"path": getattr(r, "path", ""), "methods": methods})
+    return {"routes": routes}
+
+@app.get("/api/_debug/torch", tags=["debug"])
+def debug_torch():
+    out = {}
+    try:
+        import torch
+        out["torch_version"] = torch.__version__
+        out["cuda_available"] = torch.cuda.is_available()
+        out["cuda_version"] = getattr(torch.version, "cuda", None)
+        out["device_name"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+@app.get("/api/_debug/model", tags=["debug"])
+def debug_model():
+    info = {}
+    try:
+        from backend.services.heavy_audiogen import last_error, is_available
+        info["heavy_available"] = is_available()
+        info["last_heavy_error"] = last_error()
+        info["model"] = os.getenv("AUDIOGEN_MODEL","facebook/audiogen-medium")
+    except Exception as e:
+        info["error"] = str(e)
+    return info
+
 # Routers (must be prefix-free inside files)
 app.include_router(health_router)                 # -> /health
 app.include_router(health_router, prefix="/api")  # -> /api/health
@@ -109,6 +162,16 @@ else:
     @app.get("/", include_in_schema=False)
     def landing():
         return HTMLResponse("<h1>SoundForge.AI backend is running</h1><p>No SPA build found. See <a href='/docs'>/docs</a>.</p>")
+
+# Timing + request id headers
+@app.middleware("http")
+async def catch_all(request: Request, call_next):
+    try:
+        resp = await call_next(request)
+        return resp
+    except Exception as e:
+        logging.getLogger("uvicorn.error").exception("Unhandled error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 # Timing + request id headers
 @app.middleware("http")
