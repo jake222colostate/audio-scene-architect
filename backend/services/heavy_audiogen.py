@@ -27,6 +27,17 @@ def _load_model():
     try:
         import torch
         from audiocraft.models import AudioGen
+    except ModuleNotFoundError as e:
+        missing = e.name or str(e)
+        if missing == "T5EncoderModel" or "T5EncoderModel" in missing:
+            _LAST_ERROR = (
+                "Missing dependency 'transformers' (T5EncoderModel). "
+                "Install heavy requirements: pip install -r backend/requirements-heavy.txt"
+            )
+        else:
+            _LAST_ERROR = f"Missing dependency: {missing}"
+        raise RuntimeError(_LAST_ERROR) from e
+    try:
         _MODEL = AudioGen.get_pretrained(_DEFAULT_MODEL).to("cuda")
         _MODEL.set_generation_params(
             duration=5, use_sampling=True, top_k=250, top_p=0.0,
