@@ -1,58 +1,38 @@
-import os, logging, uuid, time, sys, platform, pkgutil, importlib, json
-from pathlib import Path
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+import os, logging, sys, platform
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi.exceptions import RequestValidationError
-from starlette import status
+from pathlib import Path
+from fastapi import FastAPI
+
 from backend.routes.health import router as health_router
 from backend.routes.audio import router as audio_router
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s", stream=sys.stdout)
+
+app = FastAPI(title="SoundForge.AI", version="0.1.0")
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = APP_ROOT / "backend" / "output_audio"
 FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="SoundForge.AI", version="0.1.0")
+# Routers
+app.include_router(health_router)                 # -> /health
+app.include_router(health_router, prefix="/api")  # -> /api/health
+app.include_router(audio_router,  prefix="/api")  # -> /api/generate-audio
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-    stream=sys.stdout,
-)
+# Serve audio and SPA (or landing)
+app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
+if FRONTEND_DIST.exists() and (FRONTEND_DIST / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+else:
+    @app.get("/", include_in_schema=False)
+    def _landing():
+        return HTMLResponse("<h1>SoundForge.AI backend is running</h1><p>No SPA build found. See <a href='/docs'>/docs</a>.</p>")
 
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
-    detail = []
-    for e in exc.errors():
-        loc = ".".join(str(p) for p in e.get("loc", []))
-        msg = e.get("msg", "Invalid input")
-        detail.append(f"{loc}: {msg}")
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"ok": False, "error": "Invalid request", "detail": detail},
-    )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
-)
-
-# Direct health endpoints (cannot disappear due to router mistakes)
-@app.get("/api/health", tags=["health"])
-def api_health():
-    return {"status": "ok"}
-
-@app.get("/health", tags=["health"])
-def root_health():
-    return {"status": "ok"}
-
-
+# Preload model if requested
 @app.on_event("startup")
-async def heavy_preflight():
+async def _heavy_preflight():
     if os.getenv("USE_HEAVY","0") == "1":
         try:
             import torch
@@ -82,12 +62,11 @@ def version():
     except Exception as e:
         last = str(e)
     return {
+        "python": sys.version, "platform": platform.platform(),
         "use_heavy_env": os.getenv("USE_HEAVY","0"),
         "allow_fallback": os.getenv("ALLOW_FALLBACK",""),
         "audiogen_model": os.getenv("AUDIOGEN_MODEL","facebook/audiogen-medium"),
-        "cuda_available": cuda_ok,
-        "cuda_version": cuda_ver,
-        "device_name": dev,
+        "cuda_available": cuda_ok, "cuda_version": cuda_ver, "device_name": dev,
         "last_heavy_error": last
     }
 
@@ -100,101 +79,3 @@ def selftest():
         return {"ok": True, "len": int(len(wav)), "sr": 22050}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
-# Debug endpoints
-@app.get("/api/_debug/env", tags=["debug"])
-def debug_env():
-    return {
-        "python": sys.version,
-        "platform": platform.platform(),
-        "env": {k: os.environ.get(k) for k in [
-            "USE_HEAVY","ALLOW_FALLBACK","AUDIOGEN_MODEL","HF_HOME","TRANSFORMERS_CACHE","CUDA_VISIBLE_DEVICES"
-        ]},
-        "cwd": os.getcwd(),
-        "paths": sys.path[:10],
-    }
-
-@app.get("/api/_debug/routes", tags=["debug"])
-def debug_routes():
-    routes = []
-    for r in app.router.routes:
-        methods = sorted(getattr(r, "methods", ["GET"]))
-        routes.append({"path": getattr(r, "path", ""), "methods": methods})
-    return {"routes": routes}
-
-@app.get("/api/_debug/torch", tags=["debug"])
-def debug_torch():
-    out = {}
-    try:
-        import torch
-        out["torch_version"] = torch.__version__
-        out["cuda_available"] = torch.cuda.is_available()
-        out["cuda_version"] = getattr(torch.version, "cuda", None)
-        out["device_name"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
-    except Exception as e:
-        out["error"] = str(e)
-    return out
-
-@app.get("/api/_debug/model", tags=["debug"])
-def debug_model():
-    info = {}
-    try:
-        from backend.services.heavy_audiogen import last_error, is_available
-        info["heavy_available"] = is_available()
-        info["last_heavy_error"] = last_error()
-        info["model"] = os.getenv("AUDIOGEN_MODEL","facebook/audiogen-medium")
-    except Exception as e:
-        info["error"] = str(e)
-    return info
-
-# Routers (must be prefix-free inside files)
-app.include_router(health_router)                 # -> /health
-app.include_router(health_router, prefix="/api")  # -> /api/health
-app.include_router(audio_router,  prefix="/api")  # -> /api/generate-audio
-
-# Serve generated audio
-app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
-
-# Serve SPA at root if present; otherwise friendly landing page
-if FRONTEND_DIST.exists() and (FRONTEND_DIST / "index.html").exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
-else:
-    @app.get("/", include_in_schema=False)
-    def landing():
-        return HTMLResponse("<h1>SoundForge.AI backend is running</h1><p>No SPA build found. See <a href='/docs'>/docs</a>.</p>")
-
-# Timing + request id headers
-@app.middleware("http")
-async def catch_all(request: Request, call_next):
-    try:
-        resp = await call_next(request)
-        return resp
-    except Exception as e:
-        logging.getLogger("uvicorn.error").exception("Unhandled error")
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-
-# Timing + request id headers
-@app.middleware("http")
-async def timing(request: Request, call_next):
-    rid = str(uuid.uuid4())[:8]
-    start = time.time()
-    try:
-        resp = await call_next(request)
-        resp.headers["X-Request-Id"] = rid
-        resp.headers["X-Elapsed-Ms"] = str(int((time.time()-start)*1000))
-        return resp
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e), "request_id": rid}, status_code=500)
-
-# Route table logging on startup
-@app.on_event("startup")
-async def log_routes():
-    lines = []
-    for r in app.router.routes:
-        methods = ",".join(sorted(getattr(r, "methods", ["GET"])))
-        path = getattr(r, "path", "")
-        lines.append(f"{methods:7s} {path}")
-    logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
-    logging.getLogger("uvicorn.error").info(
-        "✅ Health at /api/health and /health; SPA served at / if /frontend/dist exists"
-    )

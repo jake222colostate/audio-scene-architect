@@ -1,5 +1,4 @@
-import os
-import time
+import os, time
 from urllib.parse import urljoin
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
@@ -7,14 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from backend.models.schemas import GenerateAudioRequest
 from backend.services.generate import generate_file
-# heavy AudioGen support is optional; avoid hard import at module load
-try:
-    from backend.services import heavy_audiogen  # type: ignore
-except Exception as e:
-    heavy_audiogen = None  # type: ignore
-    _HEAVY_IMPORT_ERROR = str(e)
-else:
-    _HEAVY_IMPORT_ERROR = None
+from backend.services import heavy_audiogen
 
 router = APIRouter()
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -33,17 +25,9 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
         elapsed = int((time.time() - t0) * 1000)
         return JSONResponse(
-            {
-                "ok": True,
-                "url": url,
-                "path": str(out_path),
-                "elapsed_ms": elapsed,
-                "generator": generator,
-                "heavy_error": (
-                    heavy_audiogen.last_error() if heavy_audiogen else _HEAVY_IMPORT_ERROR
-                ),
-            },
-            headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator},
+            {"ok": True, "url": url, "path": str(out_path), "elapsed_ms": elapsed,
+             "generator": generator, "heavy_error": heavy_audiogen.last_error()},
+            headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator}
         )
     except ValidationError as ve:
         raise HTTPException(status_code=422, detail=ve.errors())
@@ -51,4 +35,3 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
