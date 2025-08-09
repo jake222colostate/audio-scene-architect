@@ -1,40 +1,38 @@
-"""GPU-only AudioGen inference helper.
-
-This module wraps the AudioCraft ``AudioGen`` model and exposes a simple
-function to generate waveforms on CUDA devices. It is intentionally kept
-separate from the lightweight procedural generator so that the project can
-run in CPU-only environments without pulling in heavy dependencies.
-"""
-
-from typing import Optional
-
-import numpy as np
+import os
 import torch
-import torchaudio
+import numpy as np
+from typing import Optional
 from audiocraft.models import AudioGen
+import torchaudio
 
-
-_MODEL: Optional[AudioGen] = None
+# Singletons
+_MODEL = None
 _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-_DEFAULT_MODEL = "facebook/audiogen-medium"
+_DEFAULT_MODEL = os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium")
+_LAST_ERROR = None
 
+def last_error() -> Optional[str]:
+    return _LAST_ERROR
 
 def is_available() -> bool:
-    """Return ``True`` if CUDA is available and the heavy model can be used."""
-
     return _DEVICE == "cuda"
 
-
 def _load_model() -> AudioGen:
-    """Lazy-load the AudioGen model on first use."""
-
-    global _MODEL
-    if _MODEL is None:
+    global _MODEL, _LAST_ERROR
+    if _MODEL is not None:
+        return _MODEL
+    if not is_available():
+        _LAST_ERROR = "CUDA not available"
+        raise RuntimeError(_LAST_ERROR)
+    try:
         _MODEL = AudioGen.get_pretrained(_DEFAULT_MODEL).to(_DEVICE)
-        # Default duration; callers can override per generation call.
-        _MODEL.set_generation_params(duration=5)
-    return _MODEL
-
+        # Set defaults; will be overridden per-call
+        _MODEL.set_generation_params(duration=5, use_sampling=True, top_k=250, top_p=0.0,
+                                     temperature=1.0, cfg_coef=3.5)
+        return _MODEL
+    except Exception as e:
+        _LAST_ERROR = f"Failed to load model {_DEFAULT_MODEL}: {e}"
+        raise
 
 def generate_wav(
     prompt: str,
@@ -42,47 +40,40 @@ def generate_wav(
     sample_rate: int = 44100,
     seed: Optional[int] = None,
 ) -> np.ndarray:
-    """Generate a mono float32 waveform in ``[-1, 1]``.
-
-    Parameters
-    ----------
-    prompt:
-        Text description of the desired audio.
-    seconds:
-        Duration of the output clip. Values are clamped to ``[1, 30]``.
-    sample_rate:
-        Target sampling rate for the returned array. AudioGen internally
-        operates around ``32 kHz``; resampling is applied if necessary.
-    seed:
-        Optional manual random seed for reproducibility.
     """
-
-    if not is_available():
-        raise RuntimeError("Heavy mode not available (no CUDA)")
+    Generate mono float32 waveform in [-1,1] at `sample_rate` using AudioGen.
+    Raises on error; caller decides fallback.
+    """
+    global _LAST_ERROR
+    _LAST_ERROR = None
 
     model = _load_model()
     seconds = max(1, min(int(seconds), 30))
+
+    # Tune generation params for SFX fidelity
     model.set_generation_params(
         duration=seconds,
         use_sampling=True,
         top_k=250,
         top_p=0.0,
         temperature=1.0,
+        cfg_coef=3.5,  # classifier-free guidance; higher → closer to text
     )
     if seed is not None:
         torch.manual_seed(int(seed))
 
-    wavs = model.generate([prompt])
-    wav = wavs[0].detach().cpu()
+    try:
+        wavs = model.generate([prompt])  # returns list[Tensor]
+    except Exception as e:
+        _LAST_ERROR = f"Model.generate failed: {e}"
+        raise
+
+    wav = wavs[0].detach().cpu()  # [T] or [C,T]
     if wav.ndim > 1:
         wav = wav.mean(0)
 
     model_sr = 32000
     if sample_rate != model_sr:
-        wav = torchaudio.functional.resample(
-            wav, orig_freq=model_sr, new_freq=sample_rate
-        )
+        wav = torchaudio.functional.resample(wav, orig_freq=model_sr, new_freq=sample_rate)
 
-    wav = torch.clamp(wav, -1.0, 1.0).float().numpy()
-    return wav
-
+    return torch.clamp(wav, -1.0, 1.0).float().numpy()

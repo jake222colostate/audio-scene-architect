@@ -62,6 +62,8 @@ const Index = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
   const [lastFailedRequest, setLastFailedRequest] = useState<{prompt: string, duration: number} | null>(null);
+  const [generator, setGenerator] = useState<string | null>(null);
+  const [heavyError, setHeavyError] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Logging utility function with enhanced error context
@@ -177,6 +179,8 @@ const Index = () => {
     setIsGenerating(true);
     setError(null);
     setErrorMsg("");
+    setGenerator(null);
+    setHeavyError(null);
 
     logLine(`⏳ Sending audio generation request to backend...`);
     logLine(`📝 Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
@@ -189,6 +193,8 @@ const Index = () => {
           url: data.url,
           filename: (data?.path && typeof data.path === 'string' ? data.path.split('/').pop() : '') || data.url.split('/').pop() || ''
         });
+        setGenerator(data.generator || null);
+        setHeavyError(data.heavy_error || null);
         toast({
           title: 'Audio Ready',
           description: 'Your audio has been generated.',
@@ -342,6 +348,8 @@ const Index = () => {
               audioUrl={generatedAudio?.url}
               filename={generatedAudio?.filename}
               isLoading={isLoading}
+              generator={generator || undefined}
+              heavyError={heavyError}
             />
             
             {/* Console Panel - Always visible in development, conditionally in production */}

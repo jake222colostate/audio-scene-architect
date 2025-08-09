@@ -7,9 +7,11 @@ interface AudioPlayerProps {
   audioUrl?: string;
   filename?: string;
   isLoading?: boolean;
+  generator?: string;
+  heavyError?: string | null;
 }
 
-export const AudioPlayer = ({ audioUrl, filename, isLoading }: AudioPlayerProps) => {
+export const AudioPlayer = ({ audioUrl, filename, isLoading, generator, heavyError }: AudioPlayerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -103,7 +105,7 @@ export const AudioPlayer = ({ audioUrl, filename, isLoading }: AudioPlayerProps)
   return (
     <div className="bg-gradient-card p-6 rounded-lg border border-border space-y-4 animate-fade-in">
       <audio ref={audioRef} src={audioUrl} />
-      
+
       {/* File Info */}
       {filename && (
         <div className="flex items-center justify-between">
@@ -122,6 +124,13 @@ export const AudioPlayer = ({ audioUrl, filename, isLoading }: AudioPlayerProps)
             Download
           </Button>
         </div>
+      )}
+
+      {generator && (
+        <p className="text-xs text-muted-foreground">Generator: {generator === 'heavy' ? 'AI' : 'Fallback'}</p>
+      )}
+      {heavyError && (
+        <p className="text-[10px] text-muted-foreground opacity-70">{heavyError}</p>
       )}
 
       {/* Player Controls */}
