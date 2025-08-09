@@ -1,12 +1,9 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Union
 
-
 class GenerateAudioRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=500)
-    duration: Union[int, str] = Field(
-        ..., description="Seconds, 1–30 heavy, 1–120 fallback"
-    )
+    duration: Union[int, str] = Field(..., description="Seconds (1–30 heavy, 1–120 fallback)")
     seed: Optional[Union[int, str]] = None
     sample_rate: Optional[Union[int, str]] = 44100
 
@@ -21,21 +18,15 @@ class GenerateAudioRequest(BaseModel):
     @field_validator("duration")
     @classmethod
     def _coerce_duration(cls, v):
-        try:
-            iv = int(v)
-        except Exception:
-            raise ValueError("Duration must be an integer")
+        iv = int(v)
         if not (1 <= iv <= 120):
-            raise ValueError("Duration must be between 1 and 120 seconds")
+            raise ValueError("Duration must be 1–120 seconds")
         return iv
 
     @field_validator("sample_rate")
     @classmethod
     def _coerce_sr(cls, v):
-        try:
-            iv = int(v)
-        except Exception:
-            raise ValueError("sample_rate must be an integer")
+        iv = int(v)
         if not (8000 <= iv <= 48000):
             raise ValueError("sample_rate must be 8000–48000")
         return iv
@@ -43,10 +34,7 @@ class GenerateAudioRequest(BaseModel):
     @field_validator("seed")
     @classmethod
     def _coerce_seed(cls, v):
-        if v is None or v == "":
+        if v in (None, ""):
             return None
-        try:
-            return int(v)
-        except Exception:
-            raise ValueError("seed must be an integer if provided")
+        return int(v)
 

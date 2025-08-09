@@ -1,34 +1,45 @@
-import os, uuid, numpy as np, soundfile as sf
+import os
+import uuid
+import numpy as np
+import soundfile as sf
 from pathlib import Path
 
 USE_HEAVY = os.getenv("USE_HEAVY", "0") == "1"
+# When heavy is requested, default to NO fallback unless explicitly allowed.
+ALLOW_FALLBACK = (os.getenv("ALLOW_FALLBACK", "").strip() == "1") if USE_HEAVY else True
+
 SAMPLE_RATE = 44100
 
-
-def _allow_fallback() -> bool:
-    """Decide if procedural fallback is allowed."""
-    heavy = os.getenv("USE_HEAVY", "0") == "1"
-    val = os.getenv("ALLOW_FALLBACK", None)
-    if val is None:
-        return not heavy
-    return val == "1"
-
 def _fade(signal: np.ndarray, ms: int = 40) -> np.ndarray:
-    n = len(signal); fl = max(1, int(SAMPLE_RATE * ms / 1000))
-    env_in  = np.linspace(0, 1, fl); env_out = np.linspace(1, 0, fl)
-    y = signal.copy(); y[:fl] *= env_in; y[-fl:] *= env_out; return y
+    n = len(signal)
+    fl = max(1, int(SAMPLE_RATE * ms / 1000))
+    env_in  = np.linspace(0, 1, fl)
+    env_out = np.linspace(1, 0, fl)
+    y = signal.copy()
+    y[:fl]  *= env_in
+    y[-fl:] *= env_out
+    return y
 
 def _procedural(prompt: str, seconds: int) -> np.ndarray:
-    n = seconds * SAMPLE_RATE; t = np.linspace(0, seconds, n, endpoint=False)
-    seed = abs(hash(prompt)) % (2**32); rng = np.random.default_rng(seed)
+    n = seconds * SAMPLE_RATE
+    t = np.linspace(0, seconds, n, endpoint=False)
+    seed = abs(hash(prompt)) % (2**32)
+    rng = np.random.default_rng(seed)
     f = 110 + (seed % 300)
-    pad = 0.6*np.sin(2*np.pi*f*t + rng.random()) + 0.3*np.sin(2*np.pi*0.5*f*t + rng.random()) + 0.2*np.sin(2*np.pi*2*f*t + rng.random())
+    pad = (
+        0.6*np.sin(2*np.pi*f*t + rng.random()) +
+        0.3*np.sin(2*np.pi*0.5*f*t + rng.random()) +
+        0.2*np.sin(2*np.pi*2*f*t + rng.random())
+    )
     noise = rng.standard_normal(n).astype(np.float32)
     alpha = 0.02 + (seed % 8)/100.0
-    filt = np.zeros_like(noise, dtype=np.float32); acc = 0.0
+    filt = np.zeros_like(noise, dtype=np.float32)
+    acc = 0.0
     for i in range(n):
-        acc = alpha*noise[i] + (1-alpha)*acc; filt[i] = acc
-    y = pad + 0.25*filt; y = _fade(y / (np.max(np.abs(y)) + 1e-9), ms=40)
+        acc = alpha*noise[i] + (1-alpha)*acc
+        filt[i] = acc
+    y = pad + 0.25*filt
+    y = _fade(y / (np.max(np.abs(y)) + 1e-9), ms=40)
     return y.astype(np.float32)
 
 def _try_heavy(prompt: str, seconds: int, sample_rate: int, seed=None) -> np.ndarray:
@@ -36,10 +47,12 @@ def _try_heavy(prompt: str, seconds: int, sample_rate: int, seed=None) -> np.nda
     return heavy_audiogen.generate_wav(prompt, seconds, sample_rate=sample_rate, seed=seed)
 
 def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int = SAMPLE_RATE, seed=None):
-    """Return generated wav file path and generator name."""
+    """
+    Returns (path, generator). generator in {"heavy","procedural"}.
+    If USE_HEAVY=1 and ALLOW_FALLBACK=0, raise on heavy failure.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    generator = "procedural"
-    audio = None
+
     if USE_HEAVY:
         try:
             audio = _try_heavy(prompt, duration, sample_rate, seed=seed)
@@ -47,7 +60,7 @@ def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int
         except Exception as e:
             from backend.services.heavy_audiogen import last_error
             err = last_error() or str(e)
-            if not _allow_fallback():
+            if not ALLOW_FALLBACK:
                 raise RuntimeError(f"Heavy generation failed; fallback disabled: {err}")
             print(f"[generator] heavy failed, using procedural fallback: {err}")
             audio = _procedural(prompt, duration)
@@ -59,3 +72,4 @@ def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int
     out_path = output_dir / f"{uuid.uuid4()}.wav"
     sf.write(out_path, audio, sample_rate, subtype="PCM_16")
     return out_path, generator
+
