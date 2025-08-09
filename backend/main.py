@@ -4,6 +4,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.exceptions import RequestValidationError
+from starlette import status
 from backend.routes.health import router as health_router
 from backend.routes.audio import router as audio_router
 
@@ -13,6 +15,19 @@ FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="SoundForge.AI", version="0.1.0")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    detail = []
+    for e in exc.errors():
+        loc = ".".join(str(p) for p in e.get("loc", []))
+        msg = e.get("msg", "Invalid input")
+        detail.append(f"{loc}: {msg}")
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"ok": False, "error": "Invalid request", "detail": detail},
+    )
 
 app.add_middleware(
     CORSMiddleware,
