@@ -11,14 +11,12 @@ router = APIRouter()
 APP_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = APP_ROOT / "backend" / "output_audio"
 
-
-def _get_heavy_error_safe():
+def _heavy_error_safe():
     try:
         heavy = importlib.import_module("backend.services.heavy_audiogen")
         return getattr(heavy, "last_error")()
     except Exception:
         return None
-
 
 @router.post("/generate-audio")
 def generate_audio(payload: GenerateAudioRequest, request: Request):
@@ -32,22 +30,14 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         rel = f"/audio/{out_path.stem}.wav"
         url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
         elapsed = int((time.time() - t0) * 1000)
-        payload_data = {
-            "ok": True,
-            "url": url,
-            "path": str(out_path),
-            "elapsed_ms": elapsed,
-            "generator": generator,
-        }
-        # Only include heavy_error if the module is present
-        he = _get_heavy_error_safe()
+        resp = {"ok": True, "url": url, "path": str(out_path), "elapsed_ms": elapsed, "generator": generator}
+        he = _heavy_error_safe()
         if he is not None:
-            payload_data["heavy_error"] = he
-        return JSONResponse(payload_data, headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator})
+            resp["heavy_error"] = he
+        return JSONResponse(resp, headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator})
     except ValidationError as ve:
         raise HTTPException(status_code=422, detail=ve.errors())
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
