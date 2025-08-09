@@ -1,9 +1,16 @@
+# Torch/Torchaudio for CUDA 12.1 (compatible with Audiocraft 1.3.0)
 torch==2.1.0+cu121
 torchaudio==2.1.0+cu121
 --extra-index-url https://download.pytorch.org/whl/cu121
-audiocraft==1.3.0
-einops>=0.6
-transformers>=4.41
-accelerate>=0.30
-huggingface-hub>=0.23
 
+# AudioCraft + text encoder deps
+audiocraft==1.3.0
+transformers==4.41.2
+tokenizers>=0.14
+sentencepiece>=0.1.99
+protobuf<5
+
+# Helpers
+accelerate>=0.30
+einops>=0.6
+huggingface-hub>=0.23
