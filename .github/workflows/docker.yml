@@ -33,6 +33,13 @@ jobs:
           test -f frontend/package.json || (echo "Missing ./frontend/package.json" && exit 3)
           head -n 50 frontend/package.json || true
 
+      - name: Sanity — no placeholder dots
+        run: |
+          set -e
+          if grep -R --exclude-dir=.git --include='*.*' -n '^\s*\.\.\.\s*$' .; then
+            echo "Found placeholder '...' in the codebase. Please remove."; exit 1
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
