@@ -1,102 +1,54 @@
 from __future__ import annotations
-
-import os
-import platform
-import subprocess
-import time
+import os, platform, subprocess, time
 from pathlib import Path
 from typing import Any, Dict
-
 from .io import disk_free_gb, get_dir_size_mb
 
-
-def get_git_sha() -> str | None:
+def _git_sha() -> str | None:
     try:
-        return subprocess.check_output([
-            "git", "rev-parse", "--short", "HEAD"
-        ], text=True).strip()
+        return subprocess.check_output(["git","rev-parse","--short","HEAD"], text=True).strip()
     except Exception:
         return None
 
-
 def gather_version_payload(app) -> Dict[str, Any]:
-    """Collect diagnostic information for /version and /debug/state."""
-    python_version = platform.python_version()
-    platform_name = platform.platform()
+    audio_dir = Path(getattr(app.state, "audio_out_dir", Path("backend/output_audio")))
+    try: import torch
+    except Exception: torch = None
+    try: import torchaudio
+    except Exception: torchaudio = None
+    try: import transformers
+    except Exception: transformers = None
+    try: import tokenizers
+    except Exception: tokenizers = None
+    try: import audiocraft
+    except Exception: audiocraft = None
 
-    cuda_available = False
-    cuda_device_count = 0
-    cuda_device = None
-    torch_version = torchaudio_version = transformers_version = tokenizers_version = audiocraft_version = None
-    torch_cuda_runtime = cudnn_version = None
-
-    try:
-        import torch
-        cuda_available = torch.cuda.is_available()
-        cuda_device_count = torch.cuda.device_count()
-        if cuda_available and cuda_device_count > 0:
-            cuda_device = torch.cuda.get_device_name(0)
-            try:
-                cudnn_version = torch.backends.cudnn.version()
-            except Exception:
-                cudnn_version = None
-            torch_cuda_runtime = torch.version.cuda
-        torch_version = torch.__version__
-    except Exception:
-        pass
-
-    try:
-        import torchaudio
-        torchaudio_version = torchaudio.__version__
-    except Exception:
-        pass
-
-    try:
-        import transformers
-        transformers_version = transformers.__version__
-    except Exception:
-        pass
-
-    try:
-        import tokenizers
-        tokenizers_version = tokenizers.__version__
-    except Exception:
-        pass
-
-    try:
-        import audiocraft
-        audiocraft_version = audiocraft.__version__
-    except Exception:
-        pass
-
-    audio_dir = Path(app.state.audio_out_dir)
-    payload: Dict[str, Any] = {
+    heavy_loaded = getattr(app.state, "heavy_loaded", False)
+    last_heavy_error = getattr(app.state, "last_heavy_error", None)
+    return {
         "build_tag": os.getenv("BUILD_TAG", "dev"),
-        "git_sha": get_git_sha(),
+        "git_sha": _git_sha(),
         "image_tag": os.getenv("IMAGE_TAG"),
-        "python_version": python_version,
-        "platform": platform_name,
-        "cuda_available": cuda_available,
-        "cuda_device_count": cuda_device_count,
-        "cuda_device": cuda_device,
-        "torch_version": torch_version,
-        "torchaudio_version": torchaudio_version,
-        "transformers_version": transformers_version,
-        "tokenizers_version": tokenizers_version,
-        "audiocraft_version": audiocraft_version,
-        "torch_cuda_runtime": torch_cuda_runtime,
-        "cudnn_version": cudnn_version,
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "cuda_available": bool(torch and torch.cuda.is_available()),
+        "cuda_device_count": int(torch.cuda.device_count()) if torch and torch.cuda.is_available() else 0,
+        "cuda_device": (torch.cuda.get_device_name(0) if torch and torch.cuda.is_available() and torch.cuda.device_count() > 0 else None),
+        "torch_version": getattr(torch, "__version__", None),
+        "torchaudio_version": getattr(torchaudio, "__version__", None),
+        "transformers_version": getattr(transformers, "__version__", None),
+        "tokenizers_version": getattr(tokenizers, "__version__", None),
+        "audiocraft_version": getattr(audiocraft, "__version__", None),
         "use_heavy_env": os.getenv("USE_HEAVY"),
         "allow_fallback": os.getenv("ALLOW_FALLBACK"),
         "audiogen_model": os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium"),
         "audio_out_dir": str(audio_dir),
         "public_base_url": os.getenv("PUBLIC_BASE_URL"),
-        "last_heavy_error": getattr(app.state, "last_heavy_error", None),
-        "heavy_loaded": getattr(app.state, "heavy_loaded", False),
+        "last_heavy_error": last_heavy_error,
+        "heavy_loaded": bool(heavy_loaded),
         "uptime_seconds": int(time.time() - app.state.start_time),
         "routes_count": len(app.router.routes),
         "disk_free_gb": disk_free_gb(audio_dir),
         "audio_dir_size_mb": get_dir_size_mb(audio_dir),
         "recent_generations": list(getattr(app.state, "recent_generations", [])),
     }
-    return payload

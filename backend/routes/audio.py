@@ -1,58 +1,61 @@
-import time
-import hashlib
+import time, os
 from urllib.parse import urljoin
+import soundfile as sf
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-import soundfile as sf
 
 from backend.models.schemas import GenerateAudioRequest
 from backend.services import heavy_audiogen, fallback_procedural
 from backend.utils.io import uuid_filename
 
-
 router = APIRouter()
 
-
-def _record(app, prompt: str, duration: int, generator: str, ms: int, ok: bool):
+def _record(app, prompt, duration, generator, ms, ok):
     app.state.recent_generations.append({
-        "prompt": hashlib.sha256(prompt.encode()).hexdigest()[:8],
-        "duration": duration,
+        "prompt_hash": hash(prompt) & 0xFFFFFFFF,
+        "duration": int(duration),
         "generator": generator,
-        "ms": ms,
-        "ok": ok,
+        "ms": int(ms),
+        "ok": bool(ok),
     })
 
-
-@router.post("/generate-audio")
-def generate_audio(payload: GenerateAudioRequest, request: Request):
-    t0 = time.time()
+@router.post("/generate-audio", tags=["audio"])
+def generate_audio(request: Request, payload: GenerateAudioRequest):
     app = request.app
-    out_dir = app.state.audio_out_dir
-    base = app.state.public_base_url or str(request.headers.get("X-Public-Base-Url") or "")
+    t0 = time.time()
     try:
-        if app.state.use_heavy == "1":
+        base = (getattr(app.state, "public_base_url", None)
+                or getattr(app.state, "PUBLIC_BASE_URL", None)
+                or None)
+        sr = int(payload.sample_rate or 44100)
+        generator = "fallback"
+        y = None
+
+        use_heavy = (str(getattr(app.state, "heavy_loaded", False)).lower() == "true") or \
+                    (heavy_audiogen.is_ready())
+
+        if (use_heavy or (use_heavy is False and (str.__eq__(os.getenv("USE_HEAVY","0"), "1")))):
             try:
-                wav = heavy_audiogen.generate(payload.prompt, payload.duration, sr=payload.sample_rate)
-                out_path = out_dir / uuid_filename(".wav")
-                sf.write(out_path, wav, payload.sample_rate, subtype="PCM_16")
+                y = heavy_audiogen.generate(payload.prompt, payload.duration, sr=sr)
                 generator = "heavy"
-                app.state.last_heavy_error = None
-            except heavy_audiogen.HeavyLoadError as e:
+            except Exception as e:
                 app.state.last_heavy_error = str(e)
-                if app.state.allow_fallback == "1":
-                    out_path = fallback_procedural.generate(payload.prompt, payload.duration, out_dir, sr=payload.sample_rate)
-                    generator = "fallback"
-                else:
-                    _record(app, payload.prompt, payload.duration, "heavy", int((time.time()-t0)*1000), False)
-                    return JSONResponse({"ok": False, "error": "HEAVY_FAILED", "message": str(e)}, status_code=500)
+                if os.getenv("ALLOW_FALLBACK", "1") != "1":
+                    raise
+
+        if y is None:
+            # procedural fallback path
+            out_path = fallback_procedural.generate(payload.prompt, payload.duration, app.state.audio_out_dir, sr=sr)
         else:
-            out_path = fallback_procedural.generate(payload.prompt, payload.duration, out_dir, sr=payload.sample_rate)
-            generator = "fallback"
+            # write numpy -> wav
+            out_path = app.state.audio_out_dir / uuid_filename(".wav")
+            sf.write(out_path, y, sr)
 
         elapsed = int((time.time() - t0) * 1000)
         rel = f"/audio/{out_path.name}"
         file_url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
+
         _record(app, payload.prompt, payload.duration, generator, elapsed, True)
         resp = {"ok": True, "generator": generator, "file_url": file_url, "duration": payload.duration}
         if app.state.last_heavy_error:
@@ -63,5 +66,5 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        _record(app, payload.prompt, payload.duration, "error", int((time.time()-t0)*1000), False)
+        _record(app, payload.prompt, payload.duration, "error", int((time.time() - t0) * 1000), False)
         raise HTTPException(status_code=500, detail=str(e))
