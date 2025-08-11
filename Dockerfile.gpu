@@ -2,10 +2,8 @@
 FROM node:20-alpine AS fe
 WORKDIR /app/frontend
 
-# Copy only package manifests first for better caching
-COPY frontend/package.json frontend/package.json
-# If you have a lockfile, copy it too; if not, this line is harmless
-COPY frontend/package-lock.json frontend/package-lock.json 2>/dev/null || true
+# Copy package manifests (lockfile is optional)
+COPY frontend/package*.json ./
 
 # Install deps: prefer ci when lockfile exists, else install
 RUN if [ -f package-lock.json ]; then \
