@@ -79,14 +79,26 @@ jobs:
       - name: Smoke test container (CPU)
         run: |
           docker run -d --name asa-cpu -p 8000:8000 docker.io/${{ env.IMAGE_REPO }}:cpu
-          chmod +x scripts/wait-ready.sh || true
+
+          echo "=== Poll /api/health until 200 (liveness) ==="
           for i in {1..60}; do
-            if curl -fsS "http://localhost:8000/api/ready" >/dev/null; then
-              echo "Ready"
-              break
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health || true)
+            [ "$code" = "200" ] && echo "health OK" && break
+            sleep 2
+          done
+
+          echo "=== Poll /api/ready until 200 (readiness) or timeout ==="
+          for i in {1..90}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/ready || true)
+            if [ "$code" = "200" ]; then
+              echo "ready OK"; break
             fi
             sleep 2
           done
-          curl -fsS "http://localhost:8000/api/ready"
+
+          # final assert (fail with logs if not ready)
+          curl -f http://localhost:8000/api/ready || (docker logs asa-cpu; exit 1)
+
+          # existing acceptance checks
           bash scripts/acceptance.sh || (docker logs asa-cpu; exit 1)
           docker rm -f asa-cpu

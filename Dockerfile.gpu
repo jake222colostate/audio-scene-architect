@@ -25,9 +25,9 @@ RUN python3 -m pip install --upgrade pip \
       torch==2.3.1+cu121 \
       torchaudio==2.3.1+cu121 \
       --index-url https://download.pytorch.org/whl/cu121 \
- && python3 -m pip install \
+ && python3 -m pip install --no-cache-dir --prefer-binary \
       fastapi==0.111.0 uvicorn[standard]==0.30.0 \
-      transformers==4.41.2 tokenizers==0.15.2 sentencepiece==0.1.99 \
+      transformers==4.41.2 tokenizers==0.19.1 sentencepiece==0.1.99 \
       accelerate==0.33.0 einops==0.7.0 pydub==0.25.1 soundfile==0.12.1 \
       requests==2.32.3 python-multipart==0.0.9 librosa==0.10.2.post1 \
  && python3 -m pip install "git+https://github.com/facebookresearch/audiocraft.git@e8a0c3a"
@@ -45,7 +45,7 @@ ENV USE_HEAVY=1 \
 
 EXPOSE 8000
 
-# Optional: simple readiness probe endpoint (/api/health is fine too)
-HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD curl -fsS http://localhost:8000/api/health || exit 1
+HEALTHCHECK --start-period=60s --interval=5s --timeout=3s --retries=60 \
+  CMD curl -fsS http://localhost:8000/api/health || exit 1
 
 CMD ["python3", "-m", "backend.start"]

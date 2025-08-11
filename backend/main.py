@@ -17,6 +17,8 @@ BUILD_TAG = os.getenv("BUILD_TAG")
 _last_error = {"msg": None, "trace": None}
 _ready = False
 STARTUP_COMPLETE = False
+START_TIME = time.time()
+MODE = "starting"  # one of: "heavy" | "fallback" | "starting"
 
 def note_error(e: Exception):
     global _last_error
@@ -58,13 +60,13 @@ def create_app() -> FastAPI:
     # Direct health endpoints (liveness) and readiness
     @app.get("/api/health", tags=["health"])  # type: ignore[misc]
     def api_health():
-        return {"status": "ok"}
+        return {"status": "ok", "uptime_sec": round(time.time() - START_TIME, 1), "mode": MODE}
 
     @app.get("/api/ready", tags=["health"])  # type: ignore[misc]
     def api_ready():
         if not _ready:
-            raise HTTPException(status_code=503, detail={"status": "starting", "last_error": _last_error})
-        return {"status": "ready", "last_error": _last_error}
+            raise HTTPException(status_code=503, detail={"ready": False, "mode": MODE, "last_error": _last_error})
+        return {"ready": True, "mode": MODE, "last_error": _last_error}
 
     @app.get("/health", tags=["health"])  # type: ignore[misc]
     def root_health():
@@ -112,7 +114,7 @@ def create_app() -> FastAPI:
     # Readiness + heavy init
     @app.on_event("startup")
     async def startup():  # type: ignore[misc]
-        global _ready
+        global _ready, MODE
         try:
             routes = [f"{','.join(sorted(r.methods))} {r.path}" for r in app.routes if isinstance(r, APIRoute)]
             print("[STARTUP] Routes:\n" + "\n".join(sorted(routes)))
@@ -124,12 +126,21 @@ def create_app() -> FastAPI:
                     import torch
                     _ = torch.cuda.is_available()
                     importlib.import_module("audiocraft")
+                    MODE = "heavy"
+                    _ready = True
                 except Exception as e:
                     note_error(e)
-                    if not allow_fallback:
-                        raise
+                    if allow_fallback:
+                        MODE = "fallback"
+                        _ready = True
+                    else:
+                        MODE = "starting"
+                        _ready = False
+            else:
+                MODE = "fallback"
+                _ready = True
         finally:
-            _ready = True
+            set_startup_complete(True)
     return app
 
 
