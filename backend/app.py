@@ -50,4 +50,8 @@ def create_app() -> FastAPI:
             app.state.last_heavy_error = str(e)
             LG.warning("Heavy preload failed: %s", e)
 
+    dist_dir = Path('/app/frontend/dist')
+    if dist_dir.exists():
+        app.mount('/', StaticFiles(directory=str(dist_dir), html=True), name='frontend')
+
     return app

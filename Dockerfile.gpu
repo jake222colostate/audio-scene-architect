@@ -1,38 +1,55 @@
-FROM python:3.10-slim
+# ---------- Frontend builder (Node only here) ----------
+FROM node:20-alpine AS fe
+WORKDIR /app/frontend
 
-ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+# Copy only package manifests first for better caching
+COPY frontend/package.json frontend/package.json
+# If you have a lockfile, copy it too; if not, this line is harmless
+COPY frontend/package-lock.json frontend/package-lock.json 2>/dev/null || true
 
-# System deps
+# Install deps: prefer ci when lockfile exists, else install
+RUN if [ -f package-lock.json ]; then \
+      echo ">>> npm ci (lockfile present)"; npm ci; \
+    else \
+      echo ">>> npm install (no lockfile)"; npm install --no-audit --no-fund; \
+    fi
+
+# Copy the rest and build
+COPY frontend/ /app/frontend/
+RUN npm run build && \
+    echo "node: $(node -v)" > /app/frontend_build_info.txt && \
+    echo "npm:  $(npm -v)"  >> /app/frontend_build_info.txt
+
+# ---------- Runtime (Python + CUDA-compatible wheels) ----------
+FROM python:3.10-slim AS run
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+# System deps (ffmpeg, libsndfile for soundfile, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg git curl build-essential && \
+      ffmpeg libsndfile1 git curl ca-certificates build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy and install backend deps
+# Backend deps
 COPY backend/requirements.txt backend/requirements.txt
 COPY backend/requirements-heavy.txt backend/requirements-heavy.txt
-
 RUN pip install --upgrade pip && \
     pip install -r backend/requirements.txt && \
     pip install -r backend/requirements-heavy.txt
 
-# Copy backend and frontend
+# App code
 COPY backend/ backend/
-COPY frontend/ frontend/
 
-# Build frontend if present
-WORKDIR /app/frontend
-RUN npm ci && npm run build || true
-
-# Back to root; mount static /audio and serve frontend dist if app does that
-WORKDIR /app
+# Bring in built frontend artifacts & build-info
+COPY --from=fe /app/frontend/dist /app/frontend/dist
+COPY --from=fe /app/frontend_build_info.txt /app/frontend_build_info.txt
 
 # Expose + healthcheck
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
-  curl -fsS http://127.0.0.1:8000/health || curl -fsS http://127.0.0.1:8000/api/health || exit 1
+  curl -fsS http://127.0.0.1:8000/health || \
+  curl -fsS http://127.0.0.1:8000/api/health || exit 1
 
-# Default command
+# Run app
 CMD ["python","-m","uvicorn","backend.main:app","--host","0.0.0.0","--port","8000","--log-level","info"]

@@ -12,6 +12,15 @@ def _git_sha() -> str | None:
 
 def gather_version_payload(app) -> Dict[str, Any]:
     audio_dir = Path(getattr(app.state, "audio_out_dir", Path("backend/output_audio")))
+    dist_dir = Path('/app/frontend/dist')
+    build_info_file = Path('/app/frontend_build_info.txt')
+    build_info = None
+    if build_info_file.exists():
+        try:
+            build_info = build_info_file.read_text().strip()
+        except Exception:
+            build_info = None
+
     try: import torch
     except Exception: torch = None
     try: import torchaudio
@@ -39,11 +48,15 @@ def gather_version_payload(app) -> Dict[str, Any]:
         "transformers_version": getattr(transformers, "__version__", None),
         "tokenizers_version": getattr(tokenizers, "__version__", None),
         "audiocraft_version": getattr(audiocraft, "__version__", None),
-        "use_heavy_env": os.getenv("USE_HEAVY"),
-        "allow_fallback": os.getenv("ALLOW_FALLBACK"),
-        "audiogen_model": os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium"),
-        "audio_out_dir": str(audio_dir),
-        "public_base_url": os.getenv("PUBLIC_BASE_URL"),
+        "frontend_dist_present": dist_dir.exists(),
+        "frontend_build_info": build_info,
+        "env_summary": {
+            "USE_HEAVY": os.getenv("USE_HEAVY"),
+            "ALLOW_FALLBACK": os.getenv("ALLOW_FALLBACK"),
+            "AUDIOGEN_MODEL": os.getenv("AUDIOGEN_MODEL"),
+            "PUBLIC_BASE_URL": os.getenv("PUBLIC_BASE_URL"),
+            "AUDIO_OUT_DIR": os.getenv("AUDIO_OUT_DIR"),
+        },
         "last_heavy_error": last_heavy_error,
         "heavy_loaded": bool(heavy_loaded),
         "uptime_seconds": int(time.time() - app.state.start_time),
