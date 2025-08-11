@@ -37,15 +37,16 @@ jobs:
         run: |
           T1="${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:latest"
           T2="${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}"
-          TAGS="$T1\n$T2"
           if [ -n "${{ vars.TORCH_VERSION }}" ] && [ -n "${{ vars.AUDIOCRAFT_REF }}" ]; then
             T3="${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}"
-            TAGS="$TAGS\n$T3"
+          else
+            T3=""
           fi
           {
             echo "tags<<EOF"
-            printf "%s" "$TAGS"
-            echo
+            echo "$T1"
+            echo "$T2"
+            if [ -n "$T3" ]; then echo "$T3"; fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
