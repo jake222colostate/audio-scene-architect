@@ -1,8 +1,6 @@
 name: Build, Test and Push SoundForge.AI
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
