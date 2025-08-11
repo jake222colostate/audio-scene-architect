@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
-ARG BASE_IMAGE=docker.io/jakeypoov/audio-scene-architect:gpu-stable
-# ---- Frontend build (root SPA) ----
+
+# 1) Build frontend
 FROM node:20-slim AS frontend
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -8,24 +8,44 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm i; fi
 COPY . .
 RUN npm run build
 
-# ---- GPU runtime (from prebuilt base) ----
-ARG BASE_IMAGE
-FROM ${BASE_IMAGE} AS runtime
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-WORKDIR /app
-ARG BASE_IMAGE
-RUN echo "Using BASE_IMAGE=${BASE_IMAGE}"
+# 2) GPU runtime with CUDA + deps (no external base tag)
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS runtime
 
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# OS deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv git ffmpeg curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Python deps (pin torch/cu121 and model stack)
+RUN python3 -m pip install --upgrade pip \
+ && python3 -m pip install \
+      torch==2.3.1+cu121 \
+      torchaudio==2.3.1+cu121 \
+      --index-url https://download.pytorch.org/whl/cu121 \
+ && python3 -m pip install \
+      fastapi==0.111.0 uvicorn[standard]==0.30.0 \
+      transformers==4.41.2 tokenizers==0.15.2 sentencepiece==0.1.99 \
+      accelerate==0.33.0 einops==0.7.0 pydub==0.25.1 soundfile==0.12.1 \
+      requests==2.32.3 python-multipart==0.0.9 librosa==0.10.2.post1 \
+ && python3 -m pip install "git+https://github.com/facebookresearch/audiocraft.git@e8a0c3a"
+
+WORKDIR /app
+
+# 3) App files
 COPY backend /app/backend
 COPY --from=frontend /app/dist /app/frontend/dist
 
-# Env vars
-ENV USE_HEAVY=1 ALLOW_FALLBACK=1
+# Runtime env
+ENV USE_HEAVY=1 \
+    ALLOW_FALLBACK=1 \
+    OUTPUT_DIR=/app/backend/output_audio
+
 EXPOSE 8000
 
-# Healthcheck
-HEALTHCHECK --start-period=30s --interval=5s --timeout=3s --retries=60 \
-  CMD curl -fsS http://localhost:8000/api/ready || exit 1
+# Optional: simple readiness probe endpoint (/api/health is fine too)
+HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD curl -fsS http://localhost:8000/api/health || exit 1
 
-# Entrypoint
 CMD ["python3", "-m", "backend.start"]

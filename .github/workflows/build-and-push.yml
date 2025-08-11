@@ -30,7 +30,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compute tags
         id: tags
@@ -45,7 +45,7 @@ jobs:
           echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
-      - name: Build GPU app image
+      - name: Build & push GPU app (no base indirection)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -54,24 +54,8 @@ jobs:
           tags: |
             docker.io/jakeypoov/audio-scene-architect:gpu
             docker.io/jakeypoov/audio-scene-architect:gpu-${{ github.run_id }}
-          build-args: |
-            BASE_IMAGE=docker.io/jakeypoov/audio-scene-architect:gpu-stable
-          cache-from: |
-            type=gha
-            type=registry,ref=docker.io/jakeypoov/audio-scene-architect:gpu-buildcache
-          cache-to: |
-            type=gha,mode=max
-            type=registry,ref=docker.io/jakeypoov/audio-scene-architect:gpu-buildcache,mode=max
-
-      - name: Promote GPU base to stable tag
-        run: |
-          docker buildx imagetools create \
-            -t docker.io/jakeypoov/audio-scene-architect:gpu-stable \
-            docker.io/jakeypoov/audio-scene-architect:gpu-20250809-182730-095aa85
-
-      - name: Verify stable base is pullable
-        run: |
-          docker buildx imagetools inspect docker.io/jakeypoov/audio-scene-architect:gpu-stable
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push CPU image
         uses: docker/build-push-action@v6
