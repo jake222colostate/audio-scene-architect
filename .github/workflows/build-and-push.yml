@@ -17,6 +17,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          docker builder prune -af || true
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+          df -h
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -58,6 +73,8 @@ jobs:
             AUDIOCRAFT_REF=v1.3.0
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
 
       - name: Build and push CPU image
         uses: docker/build-push-action@v6
@@ -73,6 +90,15 @@ jobs:
             type=gha
           cache-to: |
             type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Prune Docker after build
+        if: always()
+        run: |
+          docker builder prune -af || true
+          docker system prune -af --volumes || true
+          df -h
 
       - name: Print stamped tag
         run: |

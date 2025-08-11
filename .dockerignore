@@ -1,11 +1,12 @@
-# Ignore large and build-time artifacts to speed up Docker context
-node_modules
-.dist
-frontend/dist
-dist
 .git
-.venv
-__pycache__
-.cache
-logs
+.github
+**/node_modules
+**/.cache
+**/.next
+**/dist
+**/build
+**/__pycache__
+**/*.log
+.env
+.DS_Store
 backend/output_audio
