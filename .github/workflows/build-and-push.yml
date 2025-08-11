@@ -23,6 +23,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -37,6 +39,12 @@ jobs:
           SHA7=${GITHUB_SHA::7}
           echo "STAMP=${TS}-${SHA7}" >> $GITHUB_OUTPUT
 
+      - name: Set vars
+        id: vars
+        run: |
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
       - name: Build GPU runtime
         uses: docker/build-push-action@v6
         with:
@@ -44,14 +52,16 @@ jobs:
           file: Dockerfile.gpu
           push: true
           tags: |
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.tags.outputs.STAMP }}
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
           build-args: |
-            BASE_IMAGE=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}
+            BASE_IMAGE=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:latest
           cache-from: |
             type=gha
-            type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu
-          cache-to: type=gha,mode=max
+            type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-buildcache,mode=max
 
       - name: Build and push CPU image
         uses: docker/build-push-action@v6
@@ -63,7 +73,14 @@ jobs:
             docker.io/${{ env.IMAGE_REPO }}:cpu
           build-args: |
             BUILD_TAG=${{ steps.tags.outputs.STAMP }}
-          cache-to: type=inline
+          cache-from: |
+            type=gha
+          cache-to: |
+            type=gha,mode=max
+
+      - name: Print stamped tag
+        run: |
+          echo "STAMPED_GPU_TAG=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}"
 
       - name: Smoke test container (CPU)
         run: |
