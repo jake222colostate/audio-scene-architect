@@ -54,6 +54,8 @@ jobs:
           tags: |
             docker.io/jakeypoov/audio-scene-architect:gpu
             docker.io/jakeypoov/audio-scene-architect:gpu-${{ github.run_id }}
+          build-args: |
+            AUDIOCRAFT_REF=v1.3.0
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -11,6 +11,7 @@ RUN npm run build
 # 2) GPU runtime with CUDA + deps (no external base tag)
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS runtime
 
+ARG AUDIOCRAFT_REF=v1.3.0
 ARG DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
@@ -29,8 +30,13 @@ RUN python3 -m pip install --upgrade pip \
       fastapi==0.111.0 uvicorn[standard]==0.30.0 \
       transformers==4.41.2 tokenizers==0.19.1 sentencepiece==0.1.99 \
       accelerate==0.33.0 einops==0.7.0 pydub==0.25.1 soundfile==0.12.1 \
-      requests==2.32.3 python-multipart==0.0.9 librosa==0.10.2.post1 \
- && python3 -m pip install "git+https://github.com/facebookresearch/audiocraft.git@e8a0c3a"
+      requests==2.32.3 python-multipart==0.0.9 librosa==0.10.2.post1
+
+# Install Audiocraft with fallbacks: requested ref -> tagged release -> main
+RUN set -eux; \
+    python3 -m pip install --no-cache-dir "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}" \
+ || python3 -m pip install --no-cache-dir "git+https://github.com/facebookresearch/audiocraft.git@v1.3.0" \
+ || python3 -m pip install --no-cache-dir "git+https://github.com/facebookresearch/audiocraft.git@main"
 
 WORKDIR /app
 
