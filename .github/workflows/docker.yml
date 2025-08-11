@@ -36,8 +36,9 @@ jobs:
       - name: Sanity — no placeholder ellipses
         run: |
           set -e
-          if grep -R --include='*.*' -n "^\.\.\.$\|[^/]\.\.\.[^/]" .; then
-            echo "Found placeholder '...' in the codebase. Remove before building."; exit 1
+          # Only scan documentation/text files to avoid flagging TS/TSX spread syntax
+          if grep -R -n --include='*.md' --include='*.mdx' --include='*.txt' --include='*.yml' --include='*.yaml' --include='*.json' -E '(^\.\.\.$|[^/]\.\.\.[^/])' .; then
+            echo "Found placeholder '...' in docs/config files. Remove before building."; exit 1
           fi
 
       - name: Set up Docker Buildx
