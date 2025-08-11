@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
+# Must be BEFORE any FROMs so it can be used in FROM
+ARG BASE_IMAGE=docker.io/jakeypoov/audio-scene-architect:gpu-stable
+
 # Build frontend (cached)
 FROM node:20-slim AS frontend
 WORKDIR /app
@@ -10,7 +13,6 @@ COPY . .
 RUN npm run build
 
 # App runtime on prebuilt GPU base
-ARG BASE_IMAGE=docker.io/jakeypoov/audio-scene-architect:gpu-stable
 FROM ${BASE_IMAGE} AS runtime
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     USE_HEAVY=1 ALLOW_FALLBACK=1 OUTPUT_DIR=/app/backend/output_audio
