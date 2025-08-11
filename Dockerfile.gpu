@@ -22,27 +22,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy constraints early (stable cache layer)
 COPY docker/constraints-cu124.txt /tmp/constraints.txt
 
-# Python deps: install CUDA wheels first, then the rest using constraints to prevent churn
-RUN --mount=type=cache,target=/root/.cache/pip python3 -m pip install --upgrade pip \
- && --mount=type=cache,target=/root/.cache/pip python3 -m pip install \
+# Upgrade pip (cache)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --upgrade pip
+
+# Install CUDA wheels first (cache)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install \
       torch==2.4.0+cu124 torchaudio==2.4.0+cu124 \
-      --index-url https://download.pytorch.org/whl/cu124 \
- && --mount=type=cache,target=/root/.cache/pip python3 -m pip install --prefer-binary -c /tmp/constraints.txt \
+      --index-url https://download.pytorch.org/whl/cu124
+
+# Install the rest under constraints (prevents Torch churn)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --prefer-binary -c /tmp/constraints.txt \
       fastapi==0.111.0 uvicorn[standard]==0.30.0 \
       transformers==4.41.2 tokenizers==0.19.1 sentencepiece==0.1.99 \
       accelerate==0.33.0 einops==0.7.0 pydub==0.25.1 soundfile==0.12.1 \
       requests==2.32.3 python-multipart==0.0.9 librosa==0.10.2.post1
 
-# Audiocraft: install without deps so it cannot replace Torch; add ref + fallbacks
+# Audiocraft: no-deps + fallbacks (single RUN; shell handles `||`)
 ARG AUDIOCRAFT_REF=v1.3.0
-RUN --mount=type=cache,target=/root/.cache/pip set -eux; \
-    python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
-      "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}" \
-  || python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
-      "git+https://github.com/facebookresearch/audiocraft.git@v1.3.0" \
-  || python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
-      "git+https://github.com/facebookresearch/audiocraft.git@main"; \
-    python3 -m pip check
+RUN --mount=type=cache,target=/root/.cache/pip \
+    sh -lc 'python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
+        "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}" \
+      || python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
+        "git+https://github.com/facebookresearch/audiocraft.git@v1.3.0" \
+      || python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
+        "git+https://github.com/facebookresearch/audiocraft.git@main"; \
+      python3 -m pip check'
 
 WORKDIR /app
 
