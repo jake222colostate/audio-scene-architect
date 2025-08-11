@@ -9,7 +9,7 @@ COPY . .
 RUN npm run build
 
 # 2) GPU runtime with CUDA + deps (no external base tag)
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS runtime
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
 
 ARG AUDIOCRAFT_REF=v1.3.0
 ARG DEBIAN_FRONTEND=noninteractive
@@ -20,12 +20,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv git ffmpeg curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Python deps (pin torch/cu121 and model stack)
+# Python deps (pin torch/cu124 and model stack)
 RUN python3 -m pip install --upgrade pip \
  && python3 -m pip install \
-      torch==2.3.1+cu121 \
-      torchaudio==2.3.1+cu121 \
-      --index-url https://download.pytorch.org/whl/cu121 \
+      torch==2.4.0+cu124 \
+      torchaudio==2.4.0+cu124 \
+      --index-url https://download.pytorch.org/whl/cu124 \
  && python3 -m pip install --no-cache-dir --prefer-binary \
       fastapi==0.111.0 uvicorn[standard]==0.30.0 \
       transformers==4.41.2 tokenizers==0.19.1 sentencepiece==0.1.99 \
@@ -51,6 +51,7 @@ ENV USE_HEAVY=1 \
 
 EXPOSE 8000
 
+# Robust healthcheck
 HEALTHCHECK --start-period=60s --interval=5s --timeout=3s --retries=60 \
   CMD curl -fsS http://localhost:8000/api/health || exit 1
 
