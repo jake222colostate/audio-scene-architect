@@ -23,9 +23,13 @@ ARG AUDIOCRAFT_REF
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --upgrade pip
 
-# Install torch stack first (GPU wheels)
+# Install torch stack first (GPU wheels) if versions provided
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install torch==${TORCH_VERSION} torchaudio==${TORCHAUDIO_VERSION}
+    if [ -n "${TORCH_VERSION}" ] && [ -n "${TORCHAUDIO_VERSION}" ]; then \
+      pip3 install torch==${TORCH_VERSION} torchaudio==${TORCHAUDIO_VERSION}; \
+    else \
+      echo "Skipping torch/torchaudio install (versions not provided)"; \
+    fi
 
 # Install audiocraft from git ref without optional deps that often fail to build (e.g., pesq)
 RUN --mount=type=cache,target=/root/.cache/pip \

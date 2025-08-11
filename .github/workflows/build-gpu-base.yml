@@ -38,6 +38,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Compose build args
+        id: bargs
+        run: |
+          BA=""
+          if [ -n "${{ steps.vars.outputs.CUDA_BASE }}" ]; then
+            BA="${BA}CUDA_BASE=${{ steps.vars.outputs.CUDA_BASE }}"$'\n'
+          fi
+          if [ -n "${{ vars.TORCH_VERSION }}" ] && [ -n "${{ vars.TORCHAUDIO_VERSION }}" ]; then
+            BA="${BA}TORCH_VERSION=${{ vars.TORCH_VERSION }}"$'\n'
+            BA="${BA}TORCHAUDIO_VERSION=${{ vars.TORCHAUDIO_VERSION }}"$'\n'
+          fi
+          if [ -n "${{ vars.AUDIOCRAFT_REF }}" ]; then
+            BA="${BA}AUDIOCRAFT_REF=${{ vars.AUDIOCRAFT_REF }}"$'\n'
+          fi
+          {
+            echo "args<<EOF"
+            printf "%s" "$BA"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build & push GPU base
         uses: docker/build-push-action@v6
         with:
@@ -47,11 +68,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:latest
             ${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
-          build-args: |
-            CUDA_BASE=${{ steps.vars.outputs.CUDA_BASE }}
-            TORCH_VERSION=${{ vars.TORCH_VERSION }}
-            TORCHAUDIO_VERSION=${{ vars.TORCHAUDIO_VERSION }}
-            AUDIOCRAFT_REF=${{ vars.AUDIOCRAFT_REF }}
+          build-args: ${{ steps.bargs.outputs.args }}
           cache-from: |
             type=gha
           cache-to: |
