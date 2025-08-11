@@ -45,33 +45,33 @@ jobs:
           echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
-      - name: Compute base image ref
-        id: base_ref
-        run: |
-          if [ -n "${{ vars.TORCH_VERSION }}" ] && [ -n "${{ vars.AUDIOCRAFT_REF }}" ]; then
-            REF="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}"
-          else
-            REF="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:latest"
-          fi
-          echo "ref=${REF}" >> $GITHUB_OUTPUT
-
-      - name: Build GPU runtime
+      - name: Build GPU app image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.gpu
           push: true
           tags: |
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
+            docker.io/jakeypoov/audio-scene-architect:gpu
+            docker.io/jakeypoov/audio-scene-architect:gpu-${{ github.run_id }}
           build-args: |
-            BASE_IMAGE=${{ steps.base_ref.outputs.ref }}
+            BASE_IMAGE=docker.io/jakeypoov/audio-scene-architect:gpu-stable
           cache-from: |
             type=gha
-            type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-buildcache
+            type=registry,ref=docker.io/jakeypoov/audio-scene-architect:gpu-buildcache
           cache-to: |
             type=gha,mode=max
-            type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-buildcache,mode=max
+            type=registry,ref=docker.io/jakeypoov/audio-scene-architect:gpu-buildcache,mode=max
+
+      - name: Promote GPU base to stable tag
+        run: |
+          docker buildx imagetools create \
+            -t docker.io/jakeypoov/audio-scene-architect:gpu-stable \
+            docker.io/jakeypoov/audio-scene-architect:gpu-20250809-182730-095aa85
+
+      - name: Verify stable base is pullable
+        run: |
+          docker buildx imagetools inspect docker.io/jakeypoov/audio-scene-architect:gpu-stable
 
       - name: Build and push CPU image
         uses: docker/build-push-action@v6
@@ -90,7 +90,7 @@ jobs:
 
       - name: Print stamped tag
         run: |
-          echo "STAMPED_GPU_TAG=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}"
+          echo "STAMPED_GPU_TAG=docker.io/jakeypoov/audio-scene-architect:gpu-${{ github.run_id }}"
 
       - name: Smoke test container (CPU)
         run: |

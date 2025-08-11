@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG BASE_IMAGE
+ARG BASE_IMAGE=docker.io/jakeypoov/audio-scene-architect:gpu-stable
 # ---- Frontend build (root SPA) ----
 FROM node:20-slim AS frontend
 WORKDIR /app
