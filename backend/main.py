@@ -11,8 +11,17 @@ from backend.routes.meta import router as meta_router
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = APP_ROOT / "backend" / "output_audio"
-FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
+# Support both container path (/frontend/dist) and local build path (/dist)
+FRONTEND_CANDIDATES = [
+    APP_ROOT / "frontend" / "dist",
+    APP_ROOT / "dist",
+]
 
+def _find_frontend_dist():
+    for p in FRONTEND_CANDIDATES:
+        if p.exists():
+            return p
+    return None
 
 def create_app() -> FastAPI:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -43,9 +52,9 @@ def create_app() -> FastAPI:
     app.mount("/audio", StaticFiles(directory=str(OUTPUT_DIR)), name="audio")
 
     # Serve SPA at root — mount LAST so it never swallows /api/*
-    if FRONTEND_DIST.exists():
-        app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
-
+    dist = _find_frontend_dist()
+    if dist:
+        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
     # Add timing + request id
     @app.middleware("http")
     async def timing(request: Request, call_next):  # type: ignore[misc]
@@ -68,8 +77,7 @@ def create_app() -> FastAPI:
             path = getattr(r, "path", "")
             lines.append(f"{methods:7s} {path}")
         logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
-        logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health; SPA served if /frontend/dist exists")
-
+        logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health; SPA served if a dist folder is present")
     return app
 
 
