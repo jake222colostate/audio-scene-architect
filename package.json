@@ -6,15 +6,16 @@
     "postinstall": "npm --prefix frontend install",
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
-    "preview": "npm --prefix frontend run preview"
+    "preview": "npm --prefix frontend run preview",
+    "build:dev": "vite build --mode development --config vite.config.ts"
   },
   "devDependencies": {
-    "lovable-tagger": "^1.1.9"
+    "@vitejs/plugin-react-swc": "^4.0.0",
+    "lovable-tagger": "^1.1.9",
+    "vite": "^5.4.19"
   },
   "dependencies": {
-    "@vitejs/plugin-react-swc": "^4.0.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "vite": "^5.4.19"
+    "react-dom": "^18.3.1"
   }
 }
