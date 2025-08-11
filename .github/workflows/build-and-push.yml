@@ -81,6 +81,14 @@ jobs:
       - name: Smoke test container (CPU)
         run: |
           docker run -d --name asa-cpu -p 8000:8000 docker.io/${{ env.IMAGE_REPO }}:cpu
-          sleep 10
+          chmod +x scripts/wait-ready.sh || true
+          for i in {1..60}; do
+            if curl -fsS "http://localhost:8000/api/ready" >/dev/null; then
+              echo "Ready"
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS "http://localhost:8000/api/ready"
           bash scripts/acceptance.sh || (docker logs asa-cpu; exit 1)
           docker rm -f asa-cpu

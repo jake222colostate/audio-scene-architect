@@ -1,7 +1,8 @@
 # backend/main.py
 import os, logging, uuid, time, traceback
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.routing import APIRoute
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -14,13 +15,14 @@ USE_HEAVY = os.getenv("USE_HEAVY", "0")
 ALLOW_FALLBACK = os.getenv("ALLOW_FALLBACK", "1")
 BUILD_TAG = os.getenv("BUILD_TAG")
 _last_error = {"msg": None, "trace": None}
+_ready = False
 STARTUP_COMPLETE = False
 
-def note_error(e: Exception) -> None:
+def note_error(e: Exception):
     global _last_error
     _last_error = {
-        "msg": str(e),
-        "trace": "".join(traceback.format_exception(type(e), e, e.__traceback__)),
+        "msg": f"{type(e).__name__}: {e}",
+        "trace": "".join(traceback.format_exception(e))
     }
 
 def get_last_error():
@@ -53,12 +55,16 @@ def create_app() -> FastAPI:
         allow_methods=["*"], allow_headers=["*"],
     )
 
-    # Direct health endpoints (cannot vanish)
+    # Direct health endpoints (liveness) and readiness
     @app.get("/api/health", tags=["health"])  # type: ignore[misc]
     def api_health():
-        if not STARTUP_COMPLETE:
-            return JSONResponse({"status": "starting"}, status_code=503)
         return {"status": "ok"}
+
+    @app.get("/api/ready", tags=["health"])  # type: ignore[misc]
+    def api_ready():
+        if not _ready:
+            raise HTTPException(status_code=503, detail={"status": "starting", "last_error": _last_error})
+        return {"status": "ready", "last_error": _last_error}
 
     @app.get("/health", tags=["health"])  # type: ignore[misc]
     def root_health():
@@ -102,6 +108,28 @@ def create_app() -> FastAPI:
             lines.append(f"{methods:7s} {path}")
         logging.getLogger("uvicorn.error").info("Registered routes:\n" + "\n".join(lines))
         logging.getLogger("uvicorn.error").info("✅ Health at /api/health and /health; SPA served if a dist folder is present")
+
+    # Readiness + heavy init
+    @app.on_event("startup")
+    async def startup():  # type: ignore[misc]
+        global _ready
+        try:
+            routes = [f"{','.join(sorted(r.methods))} {r.path}" for r in app.routes if isinstance(r, APIRoute)]
+            print("[STARTUP] Routes:\n" + "\n".join(sorted(routes)))
+            use_heavy = os.getenv("USE_HEAVY", "0") == "1"
+            allow_fallback = os.getenv("ALLOW_FALLBACK", "1") == "1"
+            if use_heavy:
+                try:
+                    import importlib
+                    import torch
+                    _ = torch.cuda.is_available()
+                    importlib.import_module("audiocraft")
+                except Exception as e:
+                    note_error(e)
+                    if not allow_fallback:
+                        raise
+        finally:
+            _ready = True
     return app
 
 
