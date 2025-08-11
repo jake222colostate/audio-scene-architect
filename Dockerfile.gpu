@@ -1,57 +1,58 @@
 # syntax=docker/dockerfile:1.7
 
-# 1) Build frontend
+##### 1) Build frontend (cache npm)
 FROM node:20-slim AS frontend
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm i; fi
+RUN --mount=type=cache,target=/root/.npm \
+    if [ -f package-lock.json ]; then npm ci; else npm i; fi
 COPY . .
 RUN npm run build
 
-# 2) GPU runtime with CUDA + deps (no external base tag)
+##### 2) GPU runtime (CUDA 12.4)
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
-
-ARG AUDIOCRAFT_REF=v1.3.0
 ARG DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # OS deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv git ffmpeg curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# Python deps (pin torch/cu124 and model stack)
-RUN python3 -m pip install --upgrade pip \
- && python3 -m pip install \
-      torch==2.4.0+cu124 \
-      torchaudio==2.4.0+cu124 \
+# Copy constraints early (stable cache layer)
+COPY docker/constraints-cu124.txt /tmp/constraints.txt
+
+# Python deps: install CUDA wheels first, then the rest using constraints to prevent churn
+RUN --mount=type=cache,target=/root/.cache/pip python3 -m pip install --upgrade pip \
+ && --mount=type=cache,target=/root/.cache/pip python3 -m pip install \
+      torch==2.4.0+cu124 torchaudio==2.4.0+cu124 \
       --index-url https://download.pytorch.org/whl/cu124 \
- && python3 -m pip install --no-cache-dir --prefer-binary \
+ && --mount=type=cache,target=/root/.cache/pip python3 -m pip install --prefer-binary -c /tmp/constraints.txt \
       fastapi==0.111.0 uvicorn[standard]==0.30.0 \
       transformers==4.41.2 tokenizers==0.19.1 sentencepiece==0.1.99 \
       accelerate==0.33.0 einops==0.7.0 pydub==0.25.1 soundfile==0.12.1 \
       requests==2.32.3 python-multipart==0.0.9 librosa==0.10.2.post1
 
-# Install Audiocraft with fallbacks: requested ref -> tagged release -> main
-RUN set -eux; \
-    python3 -m pip install --no-cache-dir "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}" \
- || python3 -m pip install --no-cache-dir "git+https://github.com/facebookresearch/audiocraft.git@v1.3.0" \
- || python3 -m pip install --no-cache-dir "git+https://github.com/facebookresearch/audiocraft.git@main"
+# Audiocraft: install without deps so it cannot replace Torch; add ref + fallbacks
+ARG AUDIOCRAFT_REF=v1.3.0
+RUN --mount=type=cache,target=/root/.cache/pip set -eux; \
+    python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
+      "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}" \
+  || python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
+      "git+https://github.com/facebookresearch/audiocraft.git@v1.3.0" \
+  || python3 -m pip install --prefer-binary -c /tmp/constraints.txt --no-deps \
+      "git+https://github.com/facebookresearch/audiocraft.git@main"; \
+    python3 -m pip check
 
 WORKDIR /app
 
-# 3) App files
+# App files (backend + built frontend)
 COPY backend /app/backend
 COPY --from=frontend /app/dist /app/frontend/dist
 
-# Runtime env
-ENV USE_HEAVY=1 \
-    ALLOW_FALLBACK=1 \
-    OUTPUT_DIR=/app/backend/output_audio
-
+# Runtime env & health
+ENV USE_HEAVY=1 ALLOW_FALLBACK=1 OUTPUT_DIR=/app/backend/output_audio
 EXPOSE 8000
-
-# Robust healthcheck
 HEALTHCHECK --start-period=60s --interval=5s --timeout=3s --retries=60 \
   CMD curl -fsS http://localhost:8000/api/health || exit 1
 
