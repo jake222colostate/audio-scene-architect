@@ -15,38 +15,65 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+      - name: Sanity check for placeholder ellipsis
+        run: |
+          echo "=== Sanity: checking for literal ... placeholders ==="
+          if git grep -n -F '...' ; then
+            echo '❌ Found literal ... placeholder text in repository. Failing.'
+            exit 1
+          else
+            echo '✅ No placeholder ellipsis found.'
+          fi
+
+      - name: Compute tags
+        id: tag
+        run: |
+          TS=$(date -u +%Y%m%d-%H%M%S)
+          SHA7=${GITHUB_SHA::7}
+          echo "ts=$TS" >> $GITHUB_OUTPUT
+          echo "sha7=$SHA7" >> $GITHUB_OUTPUT
+          echo "cpu_tag=jakeypoov/audio-scene-architect:cpu-${TS}-${SHA7}" >> $GITHUB_OUTPUT
+
       - name: Build Docker Image with Validation
         run: |
           echo "=== Building SoundForge.AI Docker image ==="
-          docker build -t soundforge-ai . --progress=plain
-          
+          docker build \
+            --build-arg BUILD_TAG=${{ steps.tag.outputs.ts }} \
+            --build-arg IMAGE_TAG=${{ steps.tag.outputs.cpu_tag }} \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -t ${{ steps.tag.outputs.cpu_tag }} \
+            -t jakeypoov/audio-scene-architect:latest \
+            . --progress=plain
           echo "=== Image built successfully! ==="
-          docker images soundforge-ai
+          docker images | grep audio-scene-architect || true
 
       - name: Test Container Startup
         run: |
           echo "=== Testing container startup ==="
-          docker run -d --name test-container -p 8000:8000 soundforge-ai
+          docker run -d --name test-container -p 8000:8000 ${{ steps.tag.outputs.cpu_tag }}
           sleep 30
-          
-          echo "=== Container status ==="
-          docker ps -a | grep test-container
-          
+          echo "=== Container status ===" && docker ps -a | grep test-container
           echo "=== Testing health endpoints ==="
+          curl -f http://localhost:8000/health || exit 1
           curl -f http://localhost:8000/api/health || exit 1
-          echo "✅ /api/health endpoint working!"
-          
+          echo "✅ health endpoints working!"
+          echo "=== Version diagnostics ==="
+          curl -sf http://localhost:8000/api/version | jq '{build, platform, cuda, heavy, frontend}'
           echo "=== Testing generate-audio endpoint ==="
-          curl -s -X POST http://localhost:8000/api/generate-audio \
+          RES=$(curl -s -X POST http://localhost:8000/api/generate-audio \
             -H "Content-Type: application/json" \
-            -d '{"prompt":"leaves crunching under footsteps","duration":5}' || exit 1
-          echo "✅ /api/generate-audio endpoint responded!"
-          
+            -d '{"prompt":"leaves crunching under footsteps","duration":8}')
+          echo "$RES" | jq .
+          OK=$(echo "$RES" | jq -r .ok)
+          URL=$(echo "$RES" | jq -r .file_url)
+          if [ "$OK" != "true" ] || [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "❌ generate-audio failed or missing file_url"; exit 1; fi
+          echo "=== HEAD the returned file ==="
+          curl -If http://localhost:8000$URL | head -n 1 | grep -q "200" || exit 1
+          echo "✅ /api/generate-audio produced a reachable file"
           echo "=== Container logs (recent) ==="
           docker logs test-container --since=10s | sed -n '1,160p'
-          
-          docker stop test-container
-          docker rm test-container
+          docker stop test-container && docker rm test-container
 
       - name: Log in to Docker Hub
         if: github.ref == 'refs/heads/main'
@@ -58,6 +85,7 @@ jobs:
       - name: Push Docker Image
         if: github.ref == 'refs/heads/main'
         run: |
-          docker tag soundforge-ai jakeypoov/audio-scene-architect:latest
+          docker push ${{ steps.tag.outputs.cpu_tag }}
           docker push jakeypoov/audio-scene-architect:latest
           echo "✅ Image pushed to Docker Hub successfully!"
+          echo "Stamped tag: ${{ steps.tag.outputs.cpu_tag }}"

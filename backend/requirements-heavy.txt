@@ -1,7 +1,14 @@
-# Install only when building a GPU image or enabling real models.
+# Optional heavy stack; build should succeed even if this fails to install.
+# CUDA 12.1 compatible torch/torchaudio recommended on GPU hosts.
+# These may be large; Dockerfile tolerates failure to keep CPU image working.
+
 torch
 torchaudio
-accelerate>=0.25
-einops>=0.6
-# audiocraft (pin a commit as needed)
-# audiocraft @ git+https://github.com/facebookresearch/audiocraft.git
+accelerate
+transformers
+huggingface-hub
+safetensors
+sentencepiece
+einops
+# AudioCraft staged from Git
+-audiocraft @ git+https://github.com/facebookresearch/audiocraft.git@main

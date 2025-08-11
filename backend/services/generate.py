@@ -4,12 +4,12 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-SAMPLE_RATE = 44100
+DEFAULT_SAMPLE_RATE = 44100
 
 
-def _fade(signal: np.ndarray, ms: int = 30) -> np.ndarray:
+def _fade(signal: np.ndarray, sr: int, ms: int = 30) -> np.ndarray:
     n = len(signal)
-    fl = max(1, int(SAMPLE_RATE * ms / 1000))
+    fl = max(1, int(sr * ms / 1000))
     env_in = np.linspace(0, 1, fl)
     env_out = np.linspace(1, 0, fl)
     y = signal.copy()
@@ -18,8 +18,8 @@ def _fade(signal: np.ndarray, ms: int = 30) -> np.ndarray:
     return y
 
 
-def _procedural(prompt: str, seconds: int) -> np.ndarray:
-    n = seconds * SAMPLE_RATE
+def _procedural(prompt: str, seconds: int, sr: int) -> np.ndarray:
+    n = seconds * sr
     t = np.linspace(0, seconds, n, endpoint=False)
     seed = abs(hash(prompt)) % (2**32)
     rng = np.random.default_rng(seed)
@@ -38,14 +38,16 @@ def _procedural(prompt: str, seconds: int) -> np.ndarray:
         acc = alpha * noise[i] + (1 - alpha) * acc
         filt[i] = acc
     y = pad + 0.25 * filt
-    y = _fade(y / (np.max(np.abs(y)) + 1e-9), ms=40)
+    y = _fade(y / (np.max(np.abs(y)) + 1e-9), sr=sr, ms=40)
     return y.astype(np.float32)
 
 
-def generate_file(prompt: str, duration: int, output_dir: Path) -> Path:
+def generate_file(prompt: str, duration: int, output_dir: Path, sample_rate: int | None = None) -> Path:
+    """Generate a deterministic procedural WAV file."""
+    sr = int(sample_rate or DEFAULT_SAMPLE_RATE)
     output_dir.mkdir(parents=True, exist_ok=True)
-    audio = _procedural(prompt.strip(), duration)
+    audio = _procedural(prompt.strip(), duration, sr)
     file_id = str(uuid.uuid4())
     out_path = output_dir / f"{file_id}.wav"
-    sf.write(out_path, audio, SAMPLE_RATE, subtype="PCM_16")
+    sf.write(out_path, audio, sr, subtype="PCM_16")
     return out_path
