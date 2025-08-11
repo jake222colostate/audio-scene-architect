@@ -159,3 +159,32 @@ async def debug_selftest():
     y = np.sin(2 * np.pi * 440 * t) + 0.1 * np.random.default_rng(0).standard_normal(t.shape)
     elapsed = int((time.time() - t0) * 1000)
     return {"ok": True, "ms": elapsed, "rms": float(np.sqrt((y**2).mean()))}
+
+
+@router.get("/api/diag/verify-heavy")
+async def verify_heavy():
+    try:
+        ok = heavy.load_model()
+        if not ok:
+            raise RuntimeError(f"load_model failed: {heavy.last_heavy_error()}")
+        data, sr = heavy.generate("creepy mechanical hallway", 1)
+        return {
+            "ok": True,
+            "sample_rate": sr,
+            "bytes": len(data),
+            "device": heavy.current_device(),
+            "model": heavy.current_model_name(),
+        }
+    except Exception as e:
+        import traceback
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": str(e),
+                "last_heavy_error": heavy.last_heavy_error(),
+                "trace": traceback.format_exc(),
+                "device": heavy.current_device(),
+                "model": heavy.current_model_name(),
+            },
+        )
