@@ -3,8 +3,19 @@ set -euo pipefail
 
 BASE_URL=${BASE_URL:-http://127.0.0.1:8000}
 
-curl -sf "${BASE_URL}/api/health" | jq -e '.status == "ok"' >/dev/null
-
+# Wait for readiness (retry up to 60s)
+for i in {1..60}; do
+  STATUS=$(curl -sf "${BASE_URL}/api/health" | jq -r .status || true)
+  if [[ "$STATUS" == "ok" ]]; then
+    break
+  fi
+  sleep 1
+  if [[ $i -eq 60 ]]; then
+    echo "Health check did not become ok within timeout (last status: $STATUS)" >&2
+    exit 1
+  fi
+done
+# Fetch version JSON now that service is ready
 VER=$(curl -sf "${BASE_URL}/api/version")
 echo "$VER" | jq . >/dev/null
 

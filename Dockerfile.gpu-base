@@ -27,9 +27,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install torch==${TORCH_VERSION} torchaudio==${TORCHAUDIO_VERSION}
 
-# Install audiocraft from git ref
+# Install audiocraft from git ref without optional deps that often fail to build (e.g., pesq)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}"
+    pip3 install --no-deps "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}"
+
+# Minimal runtime deps required by audiocraft for inference (avoid pesq)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install encodec julius
 
 # Copy requirement manifests only for caching
 WORKDIR /opt/app
