@@ -31,40 +31,27 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Compute tags
-        id: tag
+        id: tags
         run: |
           TS=$(date -u +%Y%m%d-%H%M%S)
           SHA7=${GITHUB_SHA::7}
-          echo "stamp=${TS}-${SHA7}" >> $GITHUB_OUTPUT
+          echo "STAMP=${TS}-${SHA7}" >> $GITHUB_OUTPUT
 
-      - name: Build GPU base image (optional cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.gpu-base
-          push: true
-          tags: |
-            docker.io/${{ env.IMAGE_REPO }}-gpu-base:${{ env.TORCH_VERSION }}-${{ env.AUDIOCRAFT_REF }}
-          build-args: |
-            TORCH_VERSION=${{ env.TORCH_VERSION }}
-            TORCHAUDIO_VERSION=${{ env.TORCHAUDIO_VERSION }}
-            AUDIOCRAFT_REF=${{ env.AUDIOCRAFT_REF }}
-          cache-from: type=registry,ref=docker.io/${{ env.IMAGE_REPO }}-gpu-base:${{ env.TORCH_VERSION }}-${{ env.AUDIOCRAFT_REF }}
-          cache-to: type=inline
-
-      - name: Build and push GPU image
+      - name: Build GPU runtime
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.gpu
           push: true
           tags: |
-            docker.io/${{ env.IMAGE_REPO }}:gpu-${{ steps.tag.outputs.stamp }}
-            docker.io/${{ env.IMAGE_REPO }}:gpu
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.tags.outputs.STAMP }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu
           build-args: |
-            BASE_IMAGE=docker.io/${{ env.IMAGE_REPO }}-gpu-base:${{ env.TORCH_VERSION }}-${{ env.AUDIOCRAFT_REF }}
-          cache-from: type=registry,ref=docker.io/${{ env.IMAGE_REPO }}:gpu
-          cache-to: type=inline
+            BASE_IMAGE=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}
+          cache-from: |
+            type=gha
+            type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu
+          cache-to: type=gha,mode=max
 
       - name: Build and push CPU image
         uses: docker/build-push-action@v6
@@ -75,7 +62,7 @@ jobs:
           tags: |
             docker.io/${{ env.IMAGE_REPO }}:cpu
           build-args: |
-            BUILD_TAG=${{ steps.tag.outputs.stamp }}
+            BUILD_TAG=${{ steps.tags.outputs.STAMP }}
           cache-to: type=inline
 
       - name: Smoke test container (CPU)

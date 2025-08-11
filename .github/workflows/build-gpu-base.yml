@@ -1,0 +1,46 @@
+name: build-gpu-base
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile.gpu-base'
+      - 'backend/requirements.in'
+      - 'backend/constraints.txt'
+      - '.github/workflows/build-gpu-base.yml'
+
+env:
+  REGISTRY: docker.io
+  ORG: ${{ secrets.DOCKERHUB_USERNAME }}
+  IMAGE_BASENAME: audio-scene-architect-gpu-base
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute tags
+        id: t
+        run: |
+          echo "TAG=${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}" >> $GITHUB_OUTPUT
+          echo "CUDA_BASE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04" >> $GITHUB_OUTPUT
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build & push GPU base
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gpu-base
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ steps.t.outputs.TAG }}
+          build-args: |
+            CUDA_BASE=${{ steps.t.outputs.CUDA_BASE }}
+            TORCH_VERSION=${{ vars.TORCH_VERSION }}
+            TORCHAUDIO_VERSION=${{ vars.TORCHAUDIO_VERSION }}
+            AUDIOCRAFT_REF=${{ vars.AUDIOCRAFT_REF }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

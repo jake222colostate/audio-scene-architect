@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-
+ARG BASE_IMAGE
 # ---- Frontend build (root SPA) ----
 FROM node:20-slim AS frontend
 WORKDIR /app
@@ -13,8 +13,9 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE} AS runtime
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
+ARG BASE_IMAGE
+RUN echo "Using BASE_IMAGE=${BASE_IMAGE}"
 
-# Copy backend code and frontend build
 COPY backend /app/backend
 COPY --from=frontend /app/dist /app/frontend/dist
 
