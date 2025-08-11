@@ -36,15 +36,19 @@ async def version(request: Request):
     torchaudio = _try_import("torchaudio")
     transformers = _try_import("transformers")
     tokenizers = _try_import("tokenizers")
+    sentencepiece = _try_import("sentencepiece")
     audiocraft = _try_import("audiocraft")
 
     cuda_available = bool(getattr(torch, "cuda", None) and torch.cuda.is_available()) if torch else False
     cuda_count = int(torch.cuda.device_count()) if cuda_available else 0
     cuda_name = torch.cuda.get_device_name(0) if cuda_available and cuda_count else None
+    cuda_runtime = getattr(getattr(torch, "version", None), "cuda", None) if torch else None
 
     build_tag = os.getenv("BUILD_TAG")
     image_tag = os.getenv("IMAGE_TAG")
     git_sha = os.getenv("GIT_SHA")
+    use_heavy = os.getenv("USE_HEAVY", "0")
+    allow_fallback = os.getenv("ALLOW_FALLBACK", "1")
 
     frontend_info: Dict[str, Any] = {}
     if BUILD_INFO.exists():
@@ -61,12 +65,32 @@ async def version(request: Request):
     except Exception:
         disk = None
 
+    # Retrieve last error lazily to avoid circular import
+    try:
+        from backend import main as _main  # type: ignore
+        last_error = getattr(_main, "get_last_error", lambda: {"msg": None, "trace": None})()
+    except Exception:
+        last_error = {"msg": None, "trace": None}
+
+    libs = {
+        "torch": getattr(torch, "__version__", None) if torch else None,
+        "torchaudio": getattr(torchaudio, "__version__", None) if torchaudio else None,
+        "transformers": getattr(transformers, "__version__", None) if transformers else None,
+        "tokenizers": getattr(tokenizers, "__version__", None) if tokenizers else None,
+        "sentencepiece": getattr(sentencepiece, "__version__", None) if sentencepiece else None,
+        "audiocraft": getattr(audiocraft, "__version__", None) if audiocraft else None,
+        "cuda_runtime": cuda_runtime,
+    }
+
     return JSONResponse({
         "build": {
             "build_tag": build_tag,
             "git_sha": (git_sha[:7] if git_sha else None),
             "image_tag": image_tag,
         },
+        "build_tag": build_tag,
+        "use_heavy": use_heavy,
+        "allow_fallback": allow_fallback,
         "platform": {
             "python_version": pyplat.python_version(),
             "platform": pyplat.platform(),
@@ -76,19 +100,14 @@ async def version(request: Request):
             "cuda_device_count": cuda_count,
             "cuda_device": cuda_name,
         },
-        "versions": {
-            "torch_version": getattr(torch, "__version__", None) if torch else None,
-            "torchaudio_version": getattr(torchaudio, "__version__", None) if torchaudio else None,
-            "transformers_version": getattr(transformers, "__version__", None) if transformers else None,
-            "tokenizers_version": getattr(tokenizers, "__version__", None) if tokenizers else None,
-            "audiocraft_version": getattr(audiocraft, "__version__", None) if audiocraft else None,
-        },
+        "libs": libs,
         "heavy": {
             "heavy_loaded": heavy.is_ready(),
             "last_heavy_error": heavy.last_heavy_error(),
             "model_name": heavy.current_model_name(),
             "device": heavy.current_device(),
         },
+        "last_error": last_error,
         "config": {
             "policy_default": "auto",
             "audio_out_dir": str(OUTPUT_DIR),

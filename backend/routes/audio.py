@@ -1,4 +1,5 @@
 # backend/routes/audio.py
+import os
 import time
 import uuid
 from pathlib import Path
@@ -36,8 +37,11 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
     t0 = time.time()
     generator = "fallback"
 
-    # heavy path
-    if policy in ("auto", "heavy"):
+    use_heavy = os.getenv("USE_HEAVY", "0") == "1"
+    allow_fallback = os.getenv("ALLOW_FALLBACK", "1") == "1"
+
+    # heavy path (only when enabled)
+    if use_heavy and policy in ("auto", "heavy"):
         try:
             if not heavy.is_ready():
                 heavy.load_model()
@@ -68,12 +72,17 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
                     "path": str(out_path),
                     "duration": payload.duration,
                 }, headers={"X-Elapsed-Ms": str(elapsed)})
-            elif policy == "heavy":
+            elif policy == "heavy" and not allow_fallback:
                 raise RuntimeError(heavy.last_heavy_error() or "heavy model unavailable")
         except Exception as e:
-            if policy == "heavy":
+            try:
+                from backend import main as mainmod  # lazy to avoid cycles
+                mainmod.note_error(e)
+            except Exception:
+                pass
+            if policy == "heavy" and not allow_fallback:
                 raise HTTPException(status_code=500, detail=f"heavy generation failed: {e}")
-            # fall through to fallback
+            # else: fall through to fallback
 
     # fallback path
     out_path = fallback_generate(prompt, payload.duration, OUTPUT_DIR, payload.sample_rate)

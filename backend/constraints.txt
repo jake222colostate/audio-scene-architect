@@ -1,0 +1,2 @@
+torch==${TORCH_VERSION}
+torchaudio==${TORCHAUDIO_VERSION}

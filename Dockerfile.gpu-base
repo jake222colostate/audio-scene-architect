@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1.7
+
+# GPU base with CUDA and heavy deps preinstalled
+ARG BASE_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv \
+    ffmpeg git curl build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/base
+
+# Build args for pinned versions
+ARG TORCH_VERSION
+ARG TORCHAUDIO_VERSION
+ARG AUDIOCRAFT_REF
+
+# Leverage pip cache
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --upgrade pip
+
+# Install torch stack first (GPU wheels)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install torch==${TORCH_VERSION} torchaudio==${TORCHAUDIO_VERSION}
+
+# Install audiocraft from git ref
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install "git+https://github.com/facebookresearch/audiocraft.git@${AUDIOCRAFT_REF}"
+
+# Copy requirement manifests only for caching
+WORKDIR /opt/app
+COPY backend/requirements.in backend/constraints.txt ./backend/
+COPY backend/requirements.txt ./backend/
+
+# Install non-heavy python deps (these are fast, will reuse cache)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install -r backend/requirements.txt && \
+    pip3 install -r backend/requirements.in -c backend/constraints.txt
+
+# Final base image has python libs pre-installed

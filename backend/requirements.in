@@ -1,0 +1,12 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart
+soundfile>=0.12.1
+pydub
+librosa>=0.10
+accelerate
+einops>=0.6
+requests
+transformers
+tokenizers
+sentencepiece

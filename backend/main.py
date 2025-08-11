@@ -1,5 +1,5 @@
 # backend/main.py
-import os, logging, uuid, time
+import os, logging, uuid, time, traceback
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,26 @@ from backend.routes.health import router as health_router
 from backend.routes.audio import router as audio_router
 from backend.routes.meta import router as meta_router
 
+# Runtime config and error state
+USE_HEAVY = os.getenv("USE_HEAVY", "0")
+ALLOW_FALLBACK = os.getenv("ALLOW_FALLBACK", "1")
+BUILD_TAG = os.getenv("BUILD_TAG")
+_last_error = {"msg": None, "trace": None}
+STARTUP_COMPLETE = False
+
+def note_error(e: Exception) -> None:
+    global _last_error
+    _last_error = {
+        "msg": str(e),
+        "trace": "".join(traceback.format_exception(type(e), e, e.__traceback__)),
+    }
+
+def get_last_error():
+    return _last_error
+
+def set_startup_complete(val: bool = True) -> None:
+    global STARTUP_COMPLETE
+    STARTUP_COMPLETE = bool(val)
 APP_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = APP_ROOT / "backend" / "output_audio"
 # Support both container path (/frontend/dist) and local build path (/dist)
@@ -36,10 +56,14 @@ def create_app() -> FastAPI:
     # Direct health endpoints (cannot vanish)
     @app.get("/api/health", tags=["health"])  # type: ignore[misc]
     def api_health():
+        if not STARTUP_COMPLETE:
+            return JSONResponse({"status": "starting"}, status_code=503)
         return {"status": "ok"}
 
     @app.get("/health", tags=["health"])  # type: ignore[misc]
     def root_health():
+        if not STARTUP_COMPLETE:
+            return JSONResponse({"status": "starting"}, status_code=503)
         return {"status": "ok"}
 
     # Routers

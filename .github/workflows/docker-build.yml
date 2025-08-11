@@ -51,7 +51,6 @@ jobs:
             --build-arg IMAGE_TAG=${{ steps.tag.outputs.cpu_tag }} \
             --build-arg GIT_SHA=${{ github.sha }} \
             -t ${{ steps.tag.outputs.cpu_tag }} \
-            -t jakeypoov/audio-scene-architect:latest \
             . --progress=plain
           echo "=== Image built successfully! ==="
           docker images | grep audio-scene-architect || true
@@ -95,6 +94,5 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           docker push ${{ steps.tag.outputs.cpu_tag }}
-          docker push jakeypoov/audio-scene-architect:latest
           echo "✅ Image pushed to Docker Hub successfully!"
           echo "Stamped tag: ${{ steps.tag.outputs.cpu_tag }}"
