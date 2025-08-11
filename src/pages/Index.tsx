@@ -47,6 +47,28 @@ const Index = () => {
     }
   };
 
+  // Fetch /api/version
+  const fetchVersion = async () => {
+    try {
+      logLine('[REQUEST] GET /api/version');
+      const res = await fetch(`${API_BASE}/api/version`);
+      const data = await res.json();
+      const build = data.build || {};
+      const platform = data.platform || {};
+      const cuda = data.cuda || {};
+      const frontend = data.frontend || {};
+      logLine(`Version: python=${platform.python_version || platform.python} cuda=${cuda.cuda_available}`, 'INFO');
+      logLine(`Frontend dist present: ${frontend.frontend_dist_present ?? data.frontend_dist_present}`, 'INFO');
+      if (build.build_tag || build.git_sha) {
+        logLine(`Build: tag=${build.build_tag || ''} sha=${(build.git_sha || '').toString().slice(0,7)}`, 'INFO');
+      }
+      toast({ title: 'Fetched /api/version', description: 'See console for details.' });
+    } catch (e) {
+      logLine(`❌ Failed to fetch /api/version: ${e}`, 'ERROR');
+      toast({ title: 'Version fetch failed', description: 'See console.', variant: 'destructive' });
+    }
+  };
+
   // Poll status for all pending requests
   React.useEffect(() => {
     const interval = setInterval(async () => {
@@ -260,6 +282,15 @@ const Index = () => {
           {/* Left Column - Input Form */}
           <div className="space-y-6">
             <AudioForm onSubmit={handleGenerateAudio} isLoading={isLoading} error={error} />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={fetchVersion}
+                className="px-3 py-2 rounded border border-border bg-secondary/50 hover:bg-secondary/70 text-sm"
+              >
+                Fetch /api/version
+              </button>
+            </div>
             
             {/* Loading State */}
             {isGenerating && (
