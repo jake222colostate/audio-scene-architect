@@ -1,0 +1,63 @@
+name: Build, Test and Push SoundForge.AI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Build Docker Image with Validation
+        run: |
+          echo "=== Building SoundForge.AI Docker image ==="
+          docker build -t soundforge-ai . --progress=plain
+          
+          echo "=== Image built successfully! ==="
+          docker images soundforge-ai
+
+      - name: Test Container Startup
+        run: |
+          echo "=== Testing container startup ==="
+          docker run -d --name test-container -p 8000:8000 soundforge-ai
+          sleep 30
+          
+          echo "=== Container status ==="
+          docker ps -a | grep test-container
+          
+          echo "=== Testing health endpoints ==="
+          curl -f http://localhost:8000/api/health || exit 1
+          echo "✅ /api/health endpoint working!"
+          
+          echo "=== Testing generate-audio endpoint ==="
+          curl -s -X POST http://localhost:8000/api/generate-audio \
+            -H "Content-Type: application/json" \
+            -d '{"prompt":"leaves crunching under footsteps","duration":5}' || exit 1
+          echo "✅ /api/generate-audio endpoint responded!"
+          
+          echo "=== Container logs (recent) ==="
+          docker logs test-container --since=10s | sed -n '1,160p'
+          
+          docker stop test-container
+          docker rm test-container
+
+      - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push Docker Image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag soundforge-ai jakeypoov/audio-scene-architect:latest
+          docker push jakeypoov/audio-scene-architect:latest
+          echo "✅ Image pushed to Docker Hub successfully!"

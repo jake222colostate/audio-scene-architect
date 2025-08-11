@@ -12,17 +12,18 @@ interface AudioFormProps {
 
 export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
   const [prompt, setPrompt] = useState('');
-  const [duration, setDuration] = useState<number>(60);
+  const [duration, setDuration] = useState<string>('60');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const dur = Math.max(1, Math.min(120, duration));
-    if (!prompt.trim()) {
-      alert('Please enter a prompt.');
+    const dur = parseInt(duration, 10);
+
+    if (isNaN(dur) || dur < 1 || dur > 120) {
+      alert('Duration must be between 1 and 120 seconds.');
       return;
     }
-    if (!Number.isFinite(dur)) {
-      alert('Duration must be a number.');
+    if (!prompt.trim()) {
+      alert('Please enter a prompt.');
       return;
     }
     onSubmit(prompt.trim(), dur);
@@ -55,7 +56,7 @@ export const AudioForm = ({ onSubmit, isLoading, error }: AudioFormProps) => {
             max={120}
             step={1}
             value={duration}
-            onChange={(e) => setDuration(parseInt(e.target.value || "0", 10) || 0)}
+            onChange={(e) => setDuration(e.target.value)}
             className="bg-secondary/50 border border-border rounded-md px-3 py-2 outline-none focus:border-primary"
           />
         </div>

@@ -4,43 +4,8 @@ import { AudioPlayer } from '@/components/AudioPlayer';
 import { ConsolePanel } from '@/components/ConsolePanel';
 import soundforgeLogo from '@/assets/soundforge-logo.png';
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
-
-async function submitGenerate(prompt: string, durationInput: string | number) {
-  const duration = Math.max(1, Math.min(120, Number(durationInput || 0)));
-  if (!prompt.trim()) {
-    throw new Error("Please enter a prompt.");
-  }
-  if (!Number.isFinite(duration)) {
-    throw new Error("Duration must be a number.");
-  }
-
-  const res = await fetch(`${API_BASE}/api/generate-audio`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: prompt.trim(), duration }),
-  });
-
-  let text = "";
-  try { text = await res.text(); } catch { /* ignore */ }
-  if (!res.ok) {
-    let msg = "Generation failed.";
-    try {
-      const j = JSON.parse(text);
-      msg = j?.detail
-        ? (typeof j.detail === "string" ? j.detail
-           : Array.isArray(j.detail) ? j.detail.map((e: { msg?: string }) => e.msg || JSON.stringify(e)).join("; ")
-           : JSON.stringify(j.detail))
-        : (j?.error || text || msg);
-    } catch {
-      msg = text || msg;
-    }
-    throw new Error(msg);
-  }
-  return JSON.parse(text);
-}
 
 interface GeneratedAudio {
   url: string;
@@ -63,8 +28,6 @@ const Index = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
   const [lastFailedRequest, setLastFailedRequest] = useState<{prompt: string, duration: number} | null>(null);
-  const [generator, setGenerator] = useState<string | null>(null);
-  const [heavyError, setHeavyError] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Logging utility function with enhanced error context
@@ -81,24 +44,6 @@ const Index = () => {
       setError(null);
       setErrorMsg("");
       await handleGenerateAudio(lastFailedRequest.prompt, lastFailedRequest.duration);
-    }
-  };
-
-  const runSelfTest = async () => {
-    logLine('🧪 Running self-test AI...');
-    try {
-      const res = await fetch(`${API_BASE}/api/debug/selftest`, { method: 'POST' });
-      const j = await res.json();
-      if (j.ok) {
-        logLine(`✅ Self-test passed (generator: ${j.generator})`);
-        toast({ title: 'Self-test OK', description: `Generator: ${j.generator}` });
-      } else {
-        logLine(`❌ Self-test failed: ${j.error}`);
-        toast({ title: 'Self-test failed', description: j.error, variant: 'destructive' });
-      }
-    } catch (err) {
-      logLine(`❌ Self-test error: ${err}`);
-      toast({ title: 'Self-test error', description: String(err), variant: 'destructive' });
     }
   };
 
@@ -198,22 +143,63 @@ const Index = () => {
     setIsGenerating(true);
     setError(null);
     setErrorMsg("");
-    setGenerator(null);
-    setHeavyError(null);
 
     logLine(`⏳ Sending audio generation request to backend...`);
     logLine(`📝 Prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`);
     logLine(`⏱️ Duration: ${duration} seconds`);
 
     try {
-      const data = await submitGenerate(prompt, duration);
+      // Call the FastAPI backend
+      const response = await fetch(`${API_BASE}/api/generate-audio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          duration,
+        }),
+      });
+
+      if (!response.ok) {
+        const raw = await response.text().catch(() => "");
+        let errorData: any = {};
+        try { errorData = raw ? JSON.parse(raw) : {}; } catch {}
+        console.error("Generation error", response.status, raw);
+
+        const errorMessage = errorData.message || errorData.error || `HTTP error! status: ${response.status}`;
+        
+        logLine(`❌ Backend returned error: ${errorMessage}`, 'ERROR');
+        logLine(`📊 Response status: ${response.status}`, 'ERROR');
+        if (errorData.suggest) {
+          logLine(`💡 Suggestion: ${errorData.suggest}`, 'INFO');
+        }
+        
+        const fullError = {
+          error: errorMessage,
+          trace: errorData.detail || '',
+          status: response.status
+        };
+        setError(fullError);
+        setLastFailedRequest({ prompt, duration });
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      const reqId = response.headers.get('X-Request-Id') || '';
+      const elapsedHeader = response.headers.get('X-Elapsed-Ms');
+      const elapsed = elapsedHeader ? parseInt(elapsedHeader, 10) : undefined;
+      if (elapsed !== undefined && !Number.isNaN(elapsed)) {
+        logLine(`⏱️ Backend elapsed: ${elapsed} ms`);
+      }
+      if (reqId) {
+        logLine(`🧾 Request ID: ${reqId}`);
+      }
       if (data?.ok && data?.url) {
         setGeneratedAudio({
           url: data.url,
           filename: (data?.path && typeof data.path === 'string' ? data.path.split('/').pop() : '') || data.url.split('/').pop() || ''
         });
-        setGenerator(data.generator || null);
-        setHeavyError(data.heavy_error || null);
         toast({
           title: 'Audio Ready',
           description: 'Your audio has been generated.',
@@ -224,31 +210,26 @@ const Index = () => {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "There was an error generating your audio. Please try again.";
-
+      
       logLine(`❌ Frontend error: ${errorMessage}`, 'ERROR');
       logLine(`🔄 You can retry by clicking the "Retry" button below`, 'INFO');
-
-      const heavyFailed = errorMessage.toLowerCase().includes("heavy generation failed");
-      const userMsg = heavyFailed ? `${errorMessage} Try a GPU-enabled pod or enable ALLOW_FALLBACK=1.` : errorMessage;
-
-      setErrorMsg(`❌ ${userMsg}`);
+      
+      // Set detailed error message for copyable display
+      setErrorMsg(`❌ ${errorMessage}`);
       setLastFailedRequest({ prompt, duration });
-
+      
+      // If we don't already have a structured error, create one
       if (typeof err === 'string' || !err || typeof err !== 'object' || !('error' in err)) {
         setError({
-          error: userMsg,
+          error: errorMessage,
           trace: '',
           status: 0
         });
       }
-
-      if (heavyFailed) {
-        setHeavyError(errorMessage);
-      }
-
+      
       toast({
-        title: "Generation Failed",
-        description: userMsg,
+        title: "Generation Failed", 
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -262,7 +243,7 @@ const Index = () => {
     <div className="min-h-screen bg-gradient-background">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="container mx-auto px-6 py-4">
           <div className="flex items-center space-x-3">
             <img src={soundforgeLogo} alt="SoundForge.AI" className="h-10 w-auto" />
             <div>
@@ -270,7 +251,6 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Cinematic Audio Generation</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={runSelfTest}>Self-test AI</Button>
         </div>
       </header>
 
@@ -375,8 +355,6 @@ const Index = () => {
               audioUrl={generatedAudio?.url}
               filename={generatedAudio?.filename}
               isLoading={isLoading}
-              generator={generator || undefined}
-              heavyError={heavyError}
             />
             
             {/* Console Panel - Always visible in development, conditionally in production */}

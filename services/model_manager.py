@@ -64,11 +64,6 @@ def get_audiogen_model():
             log.error("[MODEL FAIL] Try using a larger GPU or reducing batch size")
             raise RuntimeError("❌ GPU memory insufficient for AudioGen model")
         except Exception as e:
-            if "T5EncoderModel" in str(e):
-                log.error(
-                    "[MODEL FAIL] Missing dependency 'transformers' (T5EncoderModel). "
-                    "Install heavy requirements: pip install -r backend/requirements-heavy.txt"
-                )
             log.error(f"[MODEL FAIL] AudioGen load failed: {str(e)}")
             log.error(f"[MODEL FAIL] Full error: {traceback.format_exc()}")
             log.error("[MODEL FAIL] Possible causes:")

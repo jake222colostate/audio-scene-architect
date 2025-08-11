@@ -1,71 +1,33 @@
-import os
-import time
+# backend/routes/audio.py
+import os, time
 from urllib.parse import urljoin
-import soundfile as sf
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
-
 from backend.models.schemas import GenerateAudioRequest
-from backend.services import heavy_audiogen, fallback_procedural
-from backend.utils.io import uuid_filename
+from backend.services.generate import generate_file
 
 router = APIRouter()
+APP_ROOT = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = APP_ROOT / "backend" / "output_audio"
 
-def _record(app, prompt, duration, generator, ms, ok):
-    app.state.recent_generations.append({
-        "prompt_hash": hash(prompt) & 0xFFFFFFFF,
-        "duration": int(duration),
-        "generator": generator,
-        "ms": int(ms),
-        "ok": bool(ok),
-    })
+@router.post("/generate-audio")
+def generate_audio(payload: GenerateAudioRequest, request: Request):
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    if not (1 <= payload.duration <= 120):
+        raise HTTPException(status_code=400, detail="Duration must be 1–120 seconds")
 
-@router.post("/generate-audio", tags=["audio"])
-def generate_audio(request: Request, payload: GenerateAudioRequest):
-    app = request.app
     t0 = time.time()
-    try:
-        base = (getattr(app.state, "public_base_url", None)
-                or getattr(app.state, "PUBLIC_BASE_URL", None)
-                or None)
-        sr = int(payload.sample_rate or 44100)
-        generator = "fallback"
-        y = None
+    out_path = generate_file(prompt, payload.duration, OUTPUT_DIR)
 
-        use_heavy = (str(getattr(app.state, "heavy_loaded", False)).lower() == "true") or \
-                    (heavy_audiogen.is_ready())
+    base = os.getenv("PUBLIC_BASE_URL") or str(request.headers.get("X-Public-Base-Url") or "")
+    rel = f"/audio/{out_path.stem}.wav"
+    url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
 
-        if (use_heavy or (use_heavy is False and (str.__eq__(os.getenv("USE_HEAVY","0"), "1")))):
-            try:
-                y = heavy_audiogen.generate(payload.prompt, payload.duration, sr=sr)
-                generator = "heavy"
-            except Exception as e:
-                app.state.last_heavy_error = str(e)
-                if os.getenv("ALLOW_FALLBACK", "1") != "1":
-                    raise
-
-        if y is None:
-            # procedural fallback path
-            out_path = fallback_procedural.generate(payload.prompt, payload.duration, app.state.audio_out_dir, sr=sr)
-        else:
-            # write numpy -> wav
-            out_path = app.state.audio_out_dir / uuid_filename(".wav")
-            sf.write(out_path, y, sr)
-
-        elapsed = int((time.time() - t0) * 1000)
-        rel = f"/audio/{out_path.name}"
-        file_url = urljoin(base.rstrip('/') + '/', rel.lstrip('/')) if base else rel
-
-        _record(app, payload.prompt, payload.duration, generator, elapsed, True)
-        resp = {"ok": True, "generator": generator, "file_url": file_url, "duration": payload.duration}
-        if app.state.last_heavy_error:
-            resp["last_heavy_error"] = app.state.last_heavy_error
-        return JSONResponse(resp, headers={"X-Elapsed-Ms": str(elapsed), "X-Generator": generator})
-    except ValidationError as ve:
-        raise HTTPException(status_code=422, detail=ve.errors())
-    except HTTPException:
-        raise
-    except Exception as e:
-        _record(app, payload.prompt, payload.duration, "error", int((time.time() - t0) * 1000), False)
-        raise HTTPException(status_code=500, detail=str(e))
+    elapsed = int((time.time() - t0) * 1000)
+    return JSONResponse(
+        {"ok": True, "url": url, "path": str(out_path), "elapsed_ms": elapsed},
+        headers={"X-Elapsed-Ms": str(elapsed)}
+    )
