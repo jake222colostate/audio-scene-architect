@@ -46,11 +46,10 @@ echo "=== START UVICORN ==="
 python -m uvicorn "${APP_MODULE}" --host "${UVICORN_HOST}" --port "${UVICORN_PORT}" --log-level "${UVICORN_LOG_LEVEL}" &
 UV_PID=$!
 
-echo "=== WAIT FOR /health or /api/health (${STARTUP_TIMEOUT}s) ==="
+echo "=== WAIT FOR /api/health (${STARTUP_TIMEOUT}s) ==="
 deadline=$((SECONDS + STARTUP_TIMEOUT))
 while (( SECONDS < deadline )); do
-  if curl -fsS "http://127.0.0.1:${UVICORN_PORT}/health" >/dev/null 2>&1 || \
-     curl -fsS "http://127.0.0.1:${UVICORN_PORT}/api/health" >/dev/null 2>&1; then
+  if curl -fsS "http://127.0.0.1:${UVICORN_PORT}/api/health" >/dev/null; then
     echo "Health OK"; wait ${UV_PID}; exit $?
   fi
   if ! ps -p ${UV_PID} >/dev/null 2>&1; then

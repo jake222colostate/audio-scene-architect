@@ -1,36 +1,72 @@
 name: Build & Push GPU Image
+
 on:
-  push: { branches: [ "main" ] }
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
-  build:
+  build-gpu:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: 1
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set vars
-        id: vars
-        run: |
-          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Docker login
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & push GPU image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.gpu
-          push: true
-          tags: |
-            jakeypoov/audio-scene-architect:gpu
-            jakeypoov/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
-
-      - name: Print stamped tag
+      - name: Compute tags
+        id: meta
         run: |
-          echo "STAMPED_GPU_TAG=jakeypoov/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}"
+          TAG="jakeypoov/audio-scene-architect"
+          STAMP="$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          echo "tag_repo=${TAG}" >> $GITHUB_OUTPUT
+          echo "stamp=${STAMP}" >> $GITHUB_OUTPUT
+          echo "gpu_tag=${TAG}:gpu-${STAMP}" >> $GITHUB_OUTPUT
+
+      - name: Build GPU image (Dockerfile.gpu)
+        run: |
+          docker build --progress=plain \
+            -f Dockerfile.gpu \
+            --build-arg BUILD_TAG=${{ steps.meta.outputs.stamp }} \
+            -t ${{ steps.meta.outputs.tag_repo }}:gpu \
+            -t ${{ steps.meta.outputs.gpu_tag }} \
+            .
+
+      - name: Push GPU image
+        run: |
+          docker push ${{ steps.meta.outputs.tag_repo }}:gpu
+          docker push ${{ steps.meta.outputs.gpu_tag }}
+
+      - name: Print tag for RunPod (copy this)
+        run: |
+          echo "===================================="
+          echo "Use this image tag on RunPod:"
+          echo "${{ steps.meta.outputs.gpu_tag }}"
+          echo "===================================="
+
+      - name: Write tag file
+        run: echo "${{ steps.meta.outputs.gpu_tag }}" > tag.txt
+
+      - name: Upload tag as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-image-tag
+          path: tag.txt
+
+      - name: Job Summary
+        run: |
+          echo "### GPU image pushed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.meta.outputs.gpu_tag }}\`" >> $GITHUB_STEP_SUMMARY
+

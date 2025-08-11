@@ -2,16 +2,6 @@
 
 FastAPI backend with an optional Vite + React frontend.
 
-Authoritative backend lives in `backend/`. `_legacy/` is archived and not used.
-
-## Quick Start (GPU/RunPod)
-
-1. Push to `main` or trigger the "Build & Push GPU Image" workflow.
-2. Copy the `STAMPED_GPU_TAG` printed by the workflow.
-3. On RunPod, deploy using that tag and the environment variables in [docs/DEPLOY-RUNPOD.md](docs/DEPLOY-RUNPOD.md).
-4. Verify the deployment: `scripts/e2e_smoke.sh https://<RUNPOD_ID>-8000.proxy.runpod.net`.
-5. `GET /api/version` should report `heavy_loaded:true` and `last_heavy_error:null`.
-
 ## Endpoints
 - `GET /api/health` and `GET /health`
 - `POST /api/generate-audio` → returns JSON with URL of generated file

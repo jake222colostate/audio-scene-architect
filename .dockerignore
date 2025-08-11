@@ -1,9 +1,7 @@
 .git
-**/__pycache__
-**/*.pyc
-node_modules
+**/node_modules
 frontend/.cache
-.venv
+__pycache__
+*.pyc
 dist
-.DS_Store
 
