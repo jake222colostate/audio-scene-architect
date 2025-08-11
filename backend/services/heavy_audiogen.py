@@ -1,66 +1,62 @@
+from __future__ import annotations
 import os
 from typing import Optional
 import numpy as np
 
-# Lazy imports inside functions for safety on CPU images
-_MODEL = None
-_LAST_ERROR: Optional[str] = None
-_DEFAULT_MODEL = os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium")
+MODEL = None
+HEAVY_READY = False
+LAST_HEAVY_ERROR: Optional[str] = None
 
-def last_error() -> Optional[str]:
-    return _LAST_ERROR
+class HeavyLoadError(RuntimeError):
+    pass
 
-def _device_ok() -> bool:
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except Exception:
-        return False
-
-def _load_model():
-    global _MODEL, _LAST_ERROR
-    if _MODEL is not None:
-        return _MODEL
-    if not _device_ok():
-        _LAST_ERROR = "CUDA not available (torch.cuda.is_available() == False)"
-        raise RuntimeError(_LAST_ERROR)
+def load_model(model_name: str | None = None) -> None:
+    """
+    Lazy-load AudioCraft AudioGen and prepare generation params.
+    """
+    global MODEL, HEAVY_READY, LAST_HEAVY_ERROR
     try:
         import torch
         from audiocraft.models import AudioGen
-        _MODEL = AudioGen.get_pretrained(_DEFAULT_MODEL).to("cuda")
-        _MODEL.set_generation_params(
-            duration=5, use_sampling=True, top_k=250, top_p=0.0,
-            temperature=1.0, cfg_coef=3.5
-        )
-        _LAST_ERROR = None
-        return _MODEL
+
+        name = model_name or os.getenv("AUDIOGEN_MODEL", "facebook/audiogen-medium")
+        MODEL = AudioGen.get_pretrained(name)
+        MODEL.set_generation_params(duration=8)  # sensible default
+        if torch.cuda.is_available():
+            MODEL = MODEL.cuda()
+        HEAVY_READY = True
+        LAST_HEAVY_ERROR = None
     except Exception as e:
-        _LAST_ERROR = f"Failed to load '{_DEFAULT_MODEL}': {e}"
-        raise
+        MODEL = None
+        HEAVY_READY = False
+        LAST_HEAVY_ERROR = str(e)
+        raise HeavyLoadError(str(e))
 
-def generate_wav(prompt: str, seconds: int, sample_rate: int = 44100, seed: Optional[int] = None) -> np.ndarray:
-    """Return mono float32 [-1,1] waveform at sample_rate using AudioGen; raise on failure."""
-    global _LAST_ERROR
-    _LAST_ERROR = None
+def is_ready() -> bool:
+    return bool(HEAVY_READY and MODEL is not None)
 
-    import torch, torchaudio
-    model = _load_model()
-    seconds = max(1, min(int(seconds), 30))
-    model.set_generation_params(
-        duration=seconds, use_sampling=True, top_k=250, top_p=0.0,
-        temperature=1.0, cfg_coef=3.5
-    )
-    if seed is not None:
-        torch.manual_seed(int(seed))
+def generate(prompt: str, seconds: int, sr: int = 44100) -> np.ndarray:
+    """
+    Generate audio with AudioGen and return a mono numpy array at `sr`.
+    """
+    global LAST_HEAVY_ERROR
+    if not is_ready():
+        load_model()
     try:
-        wavs = model.generate([prompt])  # list[Tensor] at ~32kHz
+        import torch
+        import torchaudio
+
+        sec = max(1, int(seconds))
+        MODEL.set_generation_params(duration=sec, use_sampling=True, top_k=250, top_p=0.0,
+                                    temperature=1.0, cfg_coef=3.5)
+        wavs = MODEL.generate([prompt])
+        wav = wavs[0].detach().cpu()
+        if wav.ndim > 1:
+            wav = wav.mean(0)
+        if sr != 32000:
+            wav = torchaudio.functional.resample(wav, orig_freq=32000, new_freq=sr)
+        LAST_HEAVY_ERROR = None
+        return wav.numpy()
     except Exception as e:
-        _LAST_ERROR = f"Model.generate failed: {e}"
-        raise
-    wav = wavs[0].detach().cpu()
-    if wav.ndim > 1:
-        wav = wav.mean(0)
-    model_sr = 32000
-    if sample_rate != model_sr:
-        wav = torchaudio.functional.resample(wav, orig_freq=model_sr, new_freq=sample_rate)
-    return torch.clamp(wav, -1.0, 1.0).float().numpy()
+        LAST_HEAVY_ERROR = str(e)
+        raise HeavyLoadError(str(e))

@@ -33,20 +33,31 @@ jobs:
           test -f frontend/package.json || (echo "Missing ./frontend/package.json" && exit 3)
           head -n 50 frontend/package.json || true
 
+      - name: Sanity — no placeholder ellipses
+        run: |
+          set -e
+          if grep -R --include='*.*' -n "^\.\.\.$\|[^/]\.\.\.[^/]" .; then
+            echo "Found placeholder '...' in the codebase. Remove before building."; exit 1
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Verify Docker Hub credentials
+      - name: Determine push permissions
+        id: push
         run: |
-          if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_TOKEN}" ]; then
-            echo "Docker Hub credentials are not set. Please add DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets."
-            exit 1
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "ok=false" >> $GITHUB_OUTPUT
+            echo "Skipping Docker Hub push: DOCKERHUB_USERNAME/TOKEN not set."
           fi
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to Docker Hub
+        if: ${{ steps.push.outputs.ok == 'true' }}
         id: docker_login
         uses: docker/login-action@v3
         with:
@@ -70,22 +81,30 @@ jobs:
       - name: Smoke run + health (CPU)
         if: ${{ steps.docker_login.outcome == 'success' }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           docker run -d --name test-container -p 8000:8000 \
             -e USE_HEAVY=0 \
             ${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:latest
-          # wait up to 40s
+
+          echo "=== Wait for health ==="
           for i in $(seq 1 40); do
-            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
-              echo "Health OK on attempt $i"; break
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 || \
+               curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              echo "Health OK"; break
             fi
-            echo "Health not ready (attempt $i)"; sleep 1
+            sleep 1
           done
-          if ! curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
-            echo ">>> Container logs (last 400 lines):"
+
+          if ! (curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 || \
+                curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1); then
+            echo "Health failed; dumping /api/debug/routes (if present):"
+            curl -fsS http://127.0.0.1:8000/api/debug/routes || true
+            echo "Dumping /docs (first 2000 chars):"
+            curl -fsS http://127.0.0.1:8000/docs | head -c 2000 || true
             docker logs --timestamps test-container | tail -n 400 || true
+            docker rm -f test-container || true
             exit 1
           fi
-          # Show routes
-          curl -fsS http://127.0.0.1:8000/api/_debug/routes | jq || true
+
+          curl -fsS http://127.0.0.1:8000/api/debug/routes | jq || true
           docker rm -f test-container || true

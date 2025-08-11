@@ -1,76 +1,55 @@
-# syntax=docker/dockerfile:1.6
-
-########## Frontend build (if present) ##########
-FROM node:20-slim AS frontend
-SHELL ["/bin/bash","-euxo","pipefail","-c"]
+# ---------- Frontend builder (Node only here) ----------
+FROM node:20-alpine AS fe
 WORKDIR /app/frontend
-# Copy the folder (must exist in repo root)
-COPY frontend/ /app/frontend/
-# If there is no package.json, create an empty dist so copy won't fail
-RUN if [[ -f package.json ]]; then \
-      echo ">>> [frontend] npm ci" && npm ci && \
-      echo ">>> [frontend] npm run build" && npm run build; \
+
+# Copy only package manifests first for better caching
+COPY frontend/package.json frontend/package.json
+# If you have a lockfile, copy it too; if not, this line is harmless
+COPY frontend/package-lock.json frontend/package-lock.json 2>/dev/null || true
+
+# Install deps: prefer ci when lockfile exists, else install
+RUN if [ -f package-lock.json ]; then \
+      echo ">>> npm ci (lockfile present)"; npm ci; \
     else \
-      echo ">>> [frontend] no package.json; creating empty dist" && mkdir -p /app/frontend/dist; \
+      echo ">>> npm install (no lockfile)"; npm install --no-audit --no-fund; \
     fi
 
-########## GPU Runtime ##########
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
-SHELL ["/bin/bash","-euxo","pipefail","-c"]
+# Copy the rest and build
+COPY frontend/ /app/frontend/
+RUN npm run build && \
+    echo "node: $(node -v)" > /app/frontend_build_info.txt && \
+    echo "npm:  $(npm -v)"  >> /app/frontend_build_info.txt
 
-ARG BUILD_TAG=dev
-ENV BUILD_TAG=${BUILD_TAG} \
-    DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    HF_HOME=/app/.cache/huggingface \
-    TRANSFORMERS_CACHE=/app/.cache/huggingface
+# ---------- Runtime (Python + CUDA-compatible wheels) ----------
+FROM python:3.10-slim AS run
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+# System deps (ffmpeg, libsndfile for soundfile, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ffmpeg libsndfile1 git curl ca-certificates build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# System deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv \
-      build-essential libsndfile1 ffmpeg curl git ca-certificates && \
-    ln -sf /usr/bin/python3 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip && \
-    rm -rf /var/lib/apt/lists/*
+# Backend deps
+COPY backend/requirements.txt backend/requirements.txt
+COPY backend/requirements-heavy.txt backend/requirements-heavy.txt
+RUN pip install --upgrade pip && \
+    pip install -r backend/requirements.txt && \
+    pip install -r backend/requirements-heavy.txt
 
-# Backend code + deps
-COPY backend /app/backend
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
-# heavy deps (force CUDA index)
-RUN pip install --no-cache-dir \
-    --extra-index-url https://download.pytorch.org/whl/cu121 \
-    -r /app/backend/requirements-heavy.txt
+# App code
+COPY backend/ backend/
 
-# Print final versions into build logs (helps debugging)
-RUN python - <<'PY'
-import torch, sys
-print(">>> Torch:", torch.__version__, "CUDA OK:", torch.cuda.is_available(), "CUDA ver:", getattr(torch.version,'cuda',None))
-try:
-    import transformers, tokenizers, sentencepiece, audiocraft, torchaudio, safetensors, huggingface_hub
-    print(">>> transformers:", transformers.__version__)
-    print(">>> tokenizers:", tokenizers.__version__)
-    import importlib.metadata as md
-    print(">>> sentencepiece:", sentencepiece.__version__ if hasattr(sentencepiece,'__version__') else 'ok')
-    print(">>> torchaudio:", torchaudio.__version__)
-    print(">>> audiocraft:", md.version('audiocraft'))
-    print(">>> safetensors:", safetensors.__version__)
-    print(">>> huggingface-hub:", huggingface_hub.__version__)
-except Exception as e:
-    print(">>> import check failed:", e, file=sys.stderr)
-PY
+# Bring in built frontend artifacts & build-info
+COPY --from=fe /app/frontend/dist /app/frontend/dist
+COPY --from=fe /app/frontend_build_info.txt /app/frontend_build_info.txt
 
-# Frontend static (if built)
-RUN mkdir -p /app/frontend/dist
-COPY --from=frontend /app/frontend/dist /app/frontend/dist
-
-# Optional: model cache dirs
-RUN mkdir -p /app/.cache/huggingface
-
+# Expose + healthcheck
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD curl -fsS http://127.0.0.1:8000/api/health >/dev/null || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
+  curl -fsS http://127.0.0.1:8000/health || \
+  curl -fsS http://127.0.0.1:8000/api/health || exit 1
 
+# Run app
 CMD ["python","-m","uvicorn","backend.main:app","--host","0.0.0.0","--port","8000","--log-level","info"]
-
