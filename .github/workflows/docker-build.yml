@@ -15,14 +15,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Sanity check for placeholder ellipsis
+      - name: Sanity — no placeholder markers
         run: |
-          echo "=== Sanity: checking for literal ... placeholders ==="
-          if git grep -n -F '...' ; then
-            echo '❌ Found literal ... placeholder text in repository. Failing.'
+          set -e
+          echo "=== Sanity: scan for placeholder LINES (excluding _legacy/docs/workflows) ==="
+          # Fail only if a line is literally '...' (with optional whitespace) or a comment '# ...'
+          # Exclude legacy, docs, markdown, and workflows themselves.
+          if git grep -n -E '^[[:space:]]*\.{3}[[:space:]]*$|^[[:space:]]*#\s*\.{3}[[:space:]]*$' -- \
+              -- . \
+              ':(exclude)_legacy/**' \
+              ':(exclude)docs/**' \
+              ':(exclude).github/workflows/**' \
+              ':(exclude)**/*.md'
+          then
+            echo '❌ Found placeholder lines like "..." or "# ...". Remove them or move to _legacy/.'
             exit 1
           else
-            echo '✅ No placeholder ellipsis found.'
+            echo '✅ No placeholder lines found.'
           fi
 
       - name: Compute tags
