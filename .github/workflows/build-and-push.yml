@@ -45,6 +45,16 @@ jobs:
           echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
+      - name: Compute base image ref
+        id: base_ref
+        run: |
+          if [ -n "${{ vars.TORCH_VERSION }}" ] && [ -n "${{ vars.AUDIOCRAFT_REF }}" ]; then
+            REF="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}"
+          else
+            REF="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:latest"
+          fi
+          echo "ref=${REF}" >> $GITHUB_OUTPUT
+
       - name: Build GPU runtime
         uses: docker/build-push-action@v6
         with:
@@ -55,7 +65,7 @@ jobs:
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
           build-args: |
-            BASE_IMAGE=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect-gpu-base:latest
+            BASE_IMAGE=${{ steps.base_ref.outputs.ref }}
           cache-from: |
             type=gha
             type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/audio-scene-architect:gpu-buildcache

@@ -32,6 +32,23 @@ jobs:
           echo "stamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
           echo "CUDA_BASE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04" >> $GITHUB_OUTPUT
 
+      - name: Compose tags
+        id: ctags
+        run: |
+          T1="${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:latest"
+          T2="${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}"
+          TAGS="$T1\n$T2"
+          if [ -n "${{ vars.TORCH_VERSION }}" ] && [ -n "${{ vars.AUDIOCRAFT_REF }}" ]; then
+            T3="${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ vars.TORCH_VERSION }}-${{ vars.AUDIOCRAFT_REF }}"
+            TAGS="$TAGS\n$T3"
+          fi
+          {
+            echo "tags<<EOF"
+            printf "%s" "$TAGS"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Docker login
         uses: docker/login-action@v3
         with:
@@ -65,9 +82,7 @@ jobs:
           context: .
           file: Dockerfile.gpu-base
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.ORG }}/${{ env.IMAGE_BASENAME }}:${{ steps.vars.outputs.stamp }}-${{ steps.vars.outputs.short_sha }}
+          tags: ${{ steps.ctags.outputs.tags }}
           build-args: ${{ steps.bargs.outputs.args }}
           cache-from: |
             type=gha
