@@ -64,6 +64,8 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
                     "ok": True,
                     "generator": generator,
                     "file_url": rel,
+                    "url": rel,
+                    "path": str(out_path),
                     "duration": payload.duration,
                 }, headers={"X-Elapsed-Ms": str(elapsed)})
             elif policy == "heavy":
@@ -88,5 +90,7 @@ def generate_audio(payload: GenerateAudioRequest, request: Request):
         "ok": True,
         "generator": generator,
         "file_url": rel,
+        "url": rel,
+        "path": str(out_path),
         "duration": payload.duration,
     }, headers={"X-Elapsed-Ms": str(elapsed)})
