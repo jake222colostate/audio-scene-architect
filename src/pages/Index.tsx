@@ -4,8 +4,7 @@ import { AudioPlayer } from '@/components/AudioPlayer';
 import { ConsolePanel } from '@/components/ConsolePanel';
 import soundforgeLogo from '@/assets/soundforge-logo.png';
 import { useToast } from '@/hooks/use-toast';
-
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+import { API_BASE } from '@/lib/api';
 
 interface GeneratedAudio {
   url: string;
